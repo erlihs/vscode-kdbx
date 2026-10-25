@@ -3,3 +3,8 @@ packages:
 
 patchedDependencies:
   "@keenext/kdbxweb@2.2.0-keenext.2": patches/@keenext__kdbxweb@2.2.0-keenext.2.patch
+
+# Install scripts are not needed: esbuild ships per-platform binaries; VSIX signing is unused.
+ignoredBuiltDependencies:
+  - esbuild
+  - "@vscode/vsce-sign"

@@ -2,13 +2,15 @@
 
 ## Status and reproducibility
 
-Phase 1 is **not passed**. Every data-loss and library blocker is resolved; the
-remaining rows are calibration of defaults/performance and a VS Code-host/VSIX
-packaging check. This document records implemented evidence and open blockers,
-not a production compatibility promise.
+Phase 1's compatibility gate is **passed**: every row in [Gate blockers](#gate-blockers)
+is resolved with recorded evidence, and `pnpm compatibility -- --require-gate`
+succeeds. This document records that evidence, not a production compatibility
+promise; the persistence/recovery constraints below remain design requirements for
+the editor.
 
-Run `pnpm check`, `pnpm compatibility`, `pnpm audit --prod` and, with KeePass or
-KeePassXC available, `pnpm interop -- --app keepass|keepassxc`.
+Run `pnpm check`, `pnpm compatibility`, `pnpm audit --prod`, `pnpm calibrate`,
+`pnpm smoke` and, with KeePass or KeePassXC available,
+`pnpm interop -- --app keepass|keepassxc`.
 The probe prints OS, Node version, CPU, output size and elapsed time for each
 synthetic case. It never prints a decrypted snapshot or credentials.
 All fixtures are generated in memory from fixed synthetic values; only UUIDs,
@@ -145,10 +147,14 @@ All decoded data is admitted against ceilings **before** it is allocated in full
   Tests cover exact boundaries, markup-like text in attributes/comments/CDATA,
   gzip bombs in the payload and in XML binary pools, and over-deep group nesting.
 
-The candidate's DOM costs about 1.06 KiB of heap per element (measured with
-KeePass-shaped XML), so the 1,000,000-element ceiling needs roughly 1.1 GiB. The
-product worker's heap must be sized to the final ceilings, or the ceilings lowered;
-an out-of-memory worker is terminated and reported, never partially loaded.
+Loading costs about 2.2 KiB of worker heap per XML element (the original DOM, the
+rebuilt DOM of the unknown-data check and the model), measured by `pnpm calibrate`.
+The XML ceilings are sized from that measurement; see
+[Defaults and performance](#defaults-and-performance). Exceeding a worker's heap
+limit does **not** reliably terminate only the worker: a large allocation can abort
+the whole process (observed with Node 22), which in VS Code would be the extension
+host. The ceilings therefore keep the worst case well below the heap limit; the heap
+limit is a backstop, not the boundary.
 
 ## Independent interoperability
 
@@ -206,19 +212,85 @@ Findings that shaped the adapter:
 | Protected empty values   | **Resolved** by the [local candidate patch](#local-candidate-patch); every matrix case round-trips an empty protected field.                                                                                                                                                                                                                                                                                                                                                                      |
 | Argon2 versions          | **Resolved by policy.** KeePass always writes Argon2 1.3 and KeePassXC defaults to it ([source](https://github.com/keepassxreboot/keepassxc/blob/develop/src/crypto/kdf/Argon2Kdf.cpp)); neither UI exposes the version, so 1.0 files come only from third-party tools. Version 1.0 is refused as `UNSUPPORTED` during preflight, before any key derivation, and the provider adapter independently refuses to derive with the wrong version. `hash-wasm` (1.3 only) is accepted as the provider. |
 | Resource limits          | **Resolved** as enforceable admission ceilings: encrypted input, header, KDF work, decoded bytes (including aggregate attachments), XML size, elements and depth (bounding history). Values remain experimental; see below.                                                                                                                                                                                                                                                                       |
-| Defaults/performance     | Synthetic fixtures use low work factors. New-database memory floor, one-second calibration, reference-machine approval, worker heap sizing for the XML ceilings, and responsive/cancellable production workflows remain unverified.                                                                                                                                                                                                                                                               |
-| Platform/packaging       | Node/CI behaviour is verified on Windows/macOS/Linux (see above). Workers use Node ESM and embedded WASM without native addons, but VS Code-host and packaged VSIX checks remain unrun. The extension's minimum VS Code version is not selected.                                                                                                                                                                                                                                                  |
+| Defaults/performance     | **Resolved**; see [Defaults and performance](#defaults-and-performance). New-database Argon2id is calibrated to about one second above a 64 MiB floor, worker heap and XML ceilings are measured together, and real-cost key derivation leaves the VS Code extension host responsive (≤ 15 ms lag).                                                                                                                                                                                               |
+| Platform/packaging       | **Resolved**; see [VS Code host and VSIX packaging](#vs-code-host-and-vsix-packaging). The packaged VSIX passes in the extension host of VS Code 1.101.0 (the declared minimum) and stable, on Windows, macOS and Linux.                                                                                                                                                                                                                                                                          |
 
-Passing characterization tests means the limitation is reproducible, **not**
-that a blocker has been waived. `pnpm compatibility -- --require-gate` deliberately
-fails while the defaults/performance and platform/packaging rows are open; they
-need calibration on a reference machine and a VS Code-host/VSIX smoke test rather
-than more library work. No automatic CI or release task publishes anything.
+Passing characterization tests means a limitation is reproducible, **not** that a
+blocker has been waived. `pnpm compatibility -- --require-gate` fails whenever a
+probe case fails. No automatic CI or release task publishes anything.
+
+## Defaults and performance
+
+`pnpm calibrate` measures on the current machine; `packages/core/src/defaults.ts`
+holds the resulting policy.
+
+**Reference machine:** AMD Ryzen 5 7530U (6 cores/12 threads), 14 GiB RAM,
+Windows 11, Node 22.19.0. The specification's targets are judged on this machine.
+
+**New-database key derivation** (`NEW_DATABASE_KDF`, `calibrateArgon2id`). Applies
+only when creating a database; existing databases keep their stored settings and
+are never weakened. Calibration runs on the user's machine at creation time, like
+KeePass's one-second delay:
+
+- Argon2id, parallelism 2, memory floor 64 MiB (the KeePass and KeePassXC default).
+- Iterations are rounded **up** to reach about 1 second; if more than 10 would be
+  needed, memory doubles (up to 256 MiB) instead. Slow machines get the floor
+  settings and a longer unlock, never weaker ones.
+- Every result stays inside the admission limits, so the database always reopens.
+- Reference machine result, three runs: **128 MiB, 7 iterations, parallelism 2,
+  952–969 ms**.
+
+**Worker heap and XML ceilings** (`WORKER_RESOURCE_LIMITS`, `INPUT_LIMITS`).
+Synthetic KeePass-shaped databases (fields, protected password, tags, two history
+states per entry) at each ceiling were loaded through the real adapter path, each
+in its own process, bisecting the smallest worker heap that succeeds:
+
+| Scenario        | Elements | XML chars | Entries | Smallest heap | Load time |
+| --------------- | -------- | --------- | ------- | ------------- | --------- |
+| Element ceiling | 494,966  | 13.9 Mi   | 4,949   | 1,117 MiB     | 6.0 s     |
+| Size ceiling    | 220,266  | 31.7 Mi   | 2,202   | 535 MiB       | 4.2 s     |
+| Both ceilings   | 494,966  | 31.9 Mi   | 4,949   | 1,117 MiB     | 7.5 s     |
+
+The worker heap is 2,048 MiB, so the worst case uses 55%; `pnpm calibrate` fails if
+any scenario needs more than 75%. The earlier 1,000,000-element/64 Mi ceilings
+needed more than 2 GiB and were lowered. Ceiling-sized loads finish well inside the
+30-second worker deadline.
+
+**Responsiveness.** All key derivation, parsing and serialization run in a worker.
+In the VS Code self-test, a probe with the reference Argon2id cost (seven
+derivations, about 7 s) left the extension host's event loop delayed by at most
+13–15 ms, against the specification's 250 ms busy-feedback target; the smoke test
+fails above 250 ms. Cancellation and deadlines terminate the worker before
+resolving (tested).
+
+## VS Code host and VSIX packaging
+
+`packages/extension` is a minimal, non-product extension with one command,
+**KeePass: Run Compatibility Self-Test (synthetic data)**, which runs the full
+probe matrix plus a reference-cost case in the extension host. esbuild bundles it
+as CommonJS: `extension.js` and `probe-worker.js`, with the patched candidate,
+xmldom, fflate and hash-wasm's embedded WASM inlined; the VSIX contains only those
+files and the manifest, with no native addons and no runtime dependencies.
+
+`pnpm smoke` packages the VSIX, downloads VS Code, installs the VSIX into an
+isolated extensions directory, runs the self-test through a separate harness
+extension, verifies the extension was loaded from the installed VSIX, and requires
+all 13 cases to pass with at most 250 ms of extension-host lag.
+
+| VS Code        | Electron | Node    | Result (Windows, local) |
+| -------------- | -------- | ------- | ----------------------- |
+| 1.101.0        | 35.5.1   | 22.15.1 | 13/13, max lag 13 ms    |
+| 1.143.1 stable | 43.7.7   | 24.21.0 | 13/13, max lag 15 ms    |
+
+CI's `vscode-smoke` job repeats this on Windows, macOS and Linux (under Xvfb) for
+both versions. **Minimum VS Code version: 1.101.0**, the first release whose
+bundled Node (22) matches the core's Node 22 requirement.
 
 ## Experimental limits
 
-These are upper admission ceilings, **not security-strength defaults**, and can
-only be finalized after compatibility/performance testing:
+These are upper admission ceilings, **not security-strength defaults**. They are
+measured against the worker heap (see above) and may be revisited with real-world
+database statistics:
 
 | Item                      | Current ceiling                                       |
 | ------------------------- | ----------------------------------------------------- |
@@ -229,15 +301,16 @@ only be finalized after compatibility/performance testing:
 | Argon2 parallelism        | 4                                                     |
 | AES-KDF rounds            | 10,000,000                                            |
 | Decoded bytes per load    | 256 MiB (payload, attachments and XML binaries)       |
-| Decrypted XML             | 64 Mi characters                                      |
-| XML elements              | 1,000,000                                             |
+| Decrypted XML             | 32 Mi characters                                      |
+| XML elements              | 500,000 (about 5,000 entries with history)            |
 | XML nesting depth         | 256                                                   |
+| Worker heap               | 2,048 MiB old generation, 64 MiB young, 4 MiB stack   |
 | Synthetic worker deadline | 30 seconds, explicitly configurable up to 120 seconds |
 
 Argon2 memory must be an integer number of KiB and at least 8 KiB per lane.
 Fixture-only parameters are **1 MiB, 2 passes, 1 lane** for Argon2 and **1,000
 rounds** for AES-KDF. They are deliberately weak to keep regression tests fast
-and must never become creation defaults.
+and are never creation defaults; new databases use `calibrateArgon2id`.
 
 The spec's proposed 10 MiB per-attachment ceiling applies to importing attachments
 and is not implemented; no attachment import or export API is exposed. Existing

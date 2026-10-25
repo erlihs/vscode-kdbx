@@ -20,8 +20,10 @@ export const INPUT_LIMITS = Object.freeze({
   aesRounds: 10_000_000,
   // All bytes decompressed by one load: inner header attachments plus XML.
   decodedBytes: 256 * 1024 * 1024,
-  xmlChars: 64 * 1024 * 1024,
-  xmlElements: 1_000_000,
+  // Sized so a database at both XML ceilings stays well inside WORKER_RESOURCE_LIMITS
+  // (about 2.2 KiB of worker heap per element; measured by `pnpm calibrate`).
+  xmlChars: 32 * 1024 * 1024,
+  xmlElements: 500_000,
   xmlDepth: 256,
 });
 

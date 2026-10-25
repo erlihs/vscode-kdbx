@@ -1,0 +1,4 @@
+**
+!dist/extension.js
+!dist/probe-worker.js
+!dist/*.LEGAL.txt

@@ -1,0 +1,40 @@
+{
+  "name": "kdbx",
+  "displayName": "KeePass Database Manager (compatibility smoke test)",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Phase 1 packaging check: runs the synthetic KDBX compatibility probe inside VS Code. Not a password manager.",
+  "categories": [
+    "Other"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/erlihs/vscode-kdbx.git"
+  },
+  "publisher": "erlihs",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "bundle": "node build.mjs",
+    "package": "node build.mjs && vsce package --no-dependencies --skip-license --out dist/kdbx.vsix",
+    "smoke": "node test/run-smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.101.0",
+    "@vscode-kdbx/core": "workspace:*",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "kdbx.compatibilitySelfTest",
+        "title": "KeePass: Run Compatibility Self-Test (synthetic data)"
+      }
+    ]
+  },
+  "engines": {
+    "vscode": "^1.101.0"
+  }
+}

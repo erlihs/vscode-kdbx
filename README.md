@@ -1,9 +1,9 @@
 # KeePass Database Manager for VS Code
 
-Implementation of [the product specification](spec.md) has started with its
-**Phase 1 compatibility gate**. This is an experimental, synthetic-data-only
-research harness, **not an installable password manager**. Do not use it with
-real credentials or databases.
+Implementation of [the product specification](spec.md) has completed its
+**Phase 1 compatibility gate**. This is still an experimental, synthetic-data-only
+research harness, **not an installable password manager**: the only extension is
+a packaging smoke test. Do not use it with real credentials or databases.
 
 ## Development
 
@@ -18,22 +18,29 @@ pnpm compatibility
 ```
 
 - `pnpm build`: compile the UI-independent core with native TypeScript (`tsgo`).
-- `pnpm typecheck`: check source, tests and Vitest configuration.
+- `pnpm typecheck`: check source, tests, Vitest configuration and the extension.
 - `pnpm test`: build and run Vitest.
 - `pnpm lint`: run Oxlint.
 - `pnpm format` / `pnpm format:check`: write / check formatting with Oxfmt.
 - `pnpm compatibility`: run the synthetic cipher/KDF/compression matrix in
-  isolated Node workers and print a non-secret summary.
-- `pnpm compatibility -- --require-gate`: same probe, but exit unsuccessfully
-  while release-gate blockers remain.
+  isolated Node workers and print a non-secret summary; exits unsuccessfully if
+  any case fails (`-- --require-gate` is accepted for compatibility).
 - `pnpm interop -- --app keepass|keepassxc`: cross-application round trip with
   KeePass 2.x (`KPScript` on `PATH` or `$KPSCRIPT`) or KeePassXC (`keepassxc-cli`
   on `PATH` or `$KEEPASSXC_CLI`); add `--write-fixtures` to refresh the committed
   fixtures that application wrote.
+- `pnpm calibrate`: measure new-database Argon2id settings and the worker heap
+  needed at the XML ceilings on this machine (`-- --kdf` or `-- --heap` for one
+  part; the heap part takes several minutes and fails above 75% of the heap).
+- `pnpm package`: bundle the smoke-test extension and build
+  `packages/extension/dist/kdbx.vsix`.
+- `pnpm smoke`: package, download VS Code (`VSCODE_VERSION`, default `stable`),
+  install the VSIX and run its self-test in the extension host.
 
-CI runs on Windows, macOS and Linux with Node 22 and 24 and has passed on all six.
-Separate jobs run the round trip against KeePass 2.61.1 (Windows) and the
-distribution's KeePassXC (Ubuntu). Line endings are pinned to LF by `.gitattributes`.
+CI runs on Windows, macOS and Linux with Node 22 and 24. Separate jobs run the
+round trip against KeePass 2.61.1 (Windows) and the distribution's KeePassXC
+(Ubuntu), and the VSIX smoke test on all three systems with VS Code 1.101.0 and
+stable. Line endings are pinned to LF by `.gitattributes`.
 Vite is supplied transitively by Vitest; a dedicated webview build will be
 introduced with the editor rather than adding an unused frontend now.
 
@@ -59,36 +66,52 @@ introduced with the editor rather than adding an unused frontend now.
   elements, depth, no DTDs) before any DOM is built.
 - Cross-application round trips with KeePass 2.x and KeePassXC, with the files
   they wrote committed as independent fixtures.
+- Calibrated defaults: new databases get Argon2id tuned to about one second above
+  a 64 MiB floor (128 MiB × 7 iterations on the reference machine), and the XML
+  ceilings (500,000 elements, 32 Mi characters) are measured to fit within 55% of
+  the 2 GiB worker heap.
+- A minimal smoke-test extension (`packages/extension`) bundled into a VSIX whose
+  self-test runs the probe inside the VS Code extension host. Minimum VS Code
+  version: 1.101.0.
 
-## Gate status: blocked
+## Gate status: passed
 
-Every data-loss and library blocker is resolved. Independent round trips with
-KeePass 2.61.1 and KeePassXC 2.7/2.8 pass in both directions for every
-cipher/KDF/compression case. Databases with data the candidate cannot save
-(unknown XML or header fields) open read-only, Argon2 1.0 files (never written by
-KeePass or KeePassXC) are refused, and decoded data is admitted against per-load
-ceilings before allocation, including under concurrent loads.
+Every Phase 1 gate requirement is met with recorded evidence:
 
-The gate stays closed until two remaining items are done: calibrating defaults and
-performance (new-database KDF settings, a reference machine, worker heap sizing for
-the XML ceilings) and a VS Code-host/VSIX packaging check of the worker and WASM.
-See [the compatibility assessment](docs/compatibility.md).
+- **Interoperability:** independent round trips with KeePass 2.61.1 and KeePassXC
+  2.7/2.8 pass in both directions for every cipher/KDF/compression case.
+- **No silent data loss:** databases with data the candidate cannot save (unknown
+  XML or header fields) open read-only; empty protected fields keep their flag.
+- **Cryptographic dependencies:** Argon2 1.0 files (never written by KeePass or
+  KeePassXC) are refused before key derivation.
+- **Resource limits:** decoded data is admitted against per-load ceilings before
+  allocation, including under concurrent loads.
+- **Defaults and performance:** new-database KDF settings, XML ceilings and the
+  worker heap are calibrated on a documented reference machine; real-cost key
+  derivation delays the VS Code extension host by at most 15 ms.
+- **Packaging:** the packaged VSIX passes its self-test in the extension host of
+  VS Code 1.101.0 and stable.
+
+See [the compatibility assessment](docs/compatibility.md) for the evidence.
 
 The VS Code editor, user-facing database operations, persistence/recovery and
-Marketplace packaging have **not** been implemented. The specification forbids
-building product features on an unverified writable adapter; this harness does
-not export an open/save API for real databases.
+Marketplace publishing have **not** been implemented; they are the next phase.
+The persistence and recovery constraints in the assessment remain design
+requirements for that work. This harness does not export an open/save API for
+real databases.
 
 ## Privacy and safety
 
 Runtime probes use only generated synthetic data, stay in memory, make no
 network requests and do not write databases or plaintext snapshots to disk.
-`pnpm interop` is the exception: it writes synthetic databases to a temporary
-directory for the external application and deletes them afterwards.
+`pnpm interop` and `pnpm calibrate` are the exceptions: they write synthetic
+databases to a temporary directory and delete them afterwards. `pnpm smoke`
+downloads VS Code into `packages/extension/.vscode-test/`.
 Package installation and dependency auditing do use the package registry.
-Worker cancellation waits for termination; Node's worker heap limits **do not**
-bound WASM or ArrayBuffer memory, so decoded data is bounded by explicit
-admission ceilings instead.
+Worker cancellation waits for termination. Node's worker heap limits **do not**
+bound WASM or ArrayBuffer memory, and exceeding one can abort the whole process
+rather than only the worker, so decoded data is bounded by explicit admission
+ceilings measured to stay well below the heap limit.
 Header inspection verifies only a public checksum, not authenticity or the
 encrypted payload. A passing probe is not a security review or release approval.
 

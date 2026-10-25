@@ -2,6 +2,7 @@ import { CryptoEngine, KdbxCredentials, KdbxFormat, ProtectedValue } from "@keen
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { argon2d, argon2id } from "hash-wasm";
 import { DatabaseError } from "./errors.js";
+import type { Argon2Parameters } from "./defaults.js";
 import { INPUT_LIMITS } from "./preflight.js";
 import { scanXml } from "./xml-limits.js";
 
@@ -67,4 +68,20 @@ CryptoEngine.setArgon2Impl(
 
 export function credentials(password: string): KdbxCredentials {
   return new KdbxCredentials(ProtectedValue.fromString(password));
+}
+
+/** Duration of one Argon2id derivation with synthetic inputs; run it in a worker. */
+export async function measureArgon2id(parameters: Argon2Parameters): Promise<number> {
+  const start = performance.now();
+  const key = await argon2id({
+    password: new Uint8Array(32),
+    salt: crypto.getRandomValues(new Uint8Array(32)),
+    memorySize: parameters.memoryBytes / 1024,
+    iterations: parameters.iterations,
+    parallelism: parameters.parallelism,
+    hashLength: 32,
+    outputType: "binary",
+  });
+  key.fill(0);
+  return performance.now() - start;
 }

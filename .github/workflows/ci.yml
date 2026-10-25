@@ -23,6 +23,34 @@ jobs:
       - run: pnpm check
       - run: pnpm compatibility
       - run: pnpm audit --prod
+  vscode-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        vscode: [1.101.0, stable]
+    runs-on: ${{ matrix.os }}
+    env:
+      VSCODE_VERSION: ${{ matrix.vscode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm package
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm --filter kdbx smoke
+      - if: runner.os != 'Linux'
+        run: pnpm --filter kdbx smoke
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.vscode == 'stable'
+        with:
+          name: kdbx-smoke-vsix
+          path: packages/extension/dist/kdbx.vsix
+          retention-days: 7
   keepassxc-interop:
     runs-on: ubuntu-latest
     env:

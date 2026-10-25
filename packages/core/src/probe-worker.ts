@@ -79,16 +79,18 @@ async function probe(options: FixtureOptions): Promise<WorkerReply> {
   };
 }
 
-try {
-  parentPort?.postMessage(await probe(workerData));
-} catch (error) {
-  const reply: WorkerReply =
-    error instanceof DatabaseError
-      ? { ok: false, code: error.code, message: error.message }
-      : {
-          ok: false,
-          code: "COMPATIBILITY",
-          message: "Candidate failed the synthetic round-trip probe.",
-        };
-  parentPort?.postMessage(reply);
-}
+// No top-level await: the VSIX bundles this worker as CommonJS.
+probe(workerData).then(
+  (reply) => parentPort?.postMessage(reply),
+  (error: unknown) => {
+    const reply: WorkerReply =
+      error instanceof DatabaseError
+        ? { ok: false, code: error.code, message: error.message }
+        : {
+            ok: false,
+            code: "COMPATIBILITY",
+            message: "Candidate failed the synthetic round-trip probe.",
+          };
+    parentPort?.postMessage(reply);
+  },
+);

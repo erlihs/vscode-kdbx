@@ -1,7 +1,9 @@
 import { Worker } from "node:worker_threads";
+import { WORKER_RESOURCE_LIMITS } from "./defaults.js";
 import { DatabaseError } from "./errors.js";
 import type { ErrorCode } from "./errors.js";
 import type { FixtureOptions } from "./fixture.js";
+import { INPUT_LIMITS } from "./preflight.js";
 import type { HeaderInfo } from "./preflight.js";
 
 export interface CompatibilityReport {
@@ -37,12 +39,29 @@ export async function runCompatibilityProbe(
   ) {
     throw new DatabaseError("UNSUPPORTED", "Unsupported compatibility fixture settings.");
   }
+  const argon2 = fixture.argon2;
+  if (
+    argon2 &&
+    (fixture.kdf === "aes" ||
+      !Number.isSafeInteger(argon2.memoryBytes) ||
+      argon2.memoryBytes % 1024 !== 0 ||
+      argon2.memoryBytes < 8192 * argon2.parallelism ||
+      argon2.memoryBytes > INPUT_LIMITS.argonMemoryBytes ||
+      !Number.isSafeInteger(argon2.iterations) ||
+      argon2.iterations < 1 ||
+      argon2.iterations > INPUT_LIMITS.argonIterations ||
+      !Number.isSafeInteger(argon2.parallelism) ||
+      argon2.parallelism < 1 ||
+      argon2.parallelism > INPUT_LIMITS.argonParallelism)
+  ) {
+    throw new DatabaseError("RESOURCE_LIMIT", "Argon2 fixture settings exceed the limits.");
+  }
   if (options.signal?.aborted) {
     throw new DatabaseError("CANCELLED", "Compatibility probe cancelled.");
   }
   const worker = new Worker(new URL("./probe-worker.js", import.meta.url), {
     workerData: fixture,
-    resourceLimits: { maxOldGenerationSizeMb: 256, stackSizeMb: 4 },
+    resourceLimits: WORKER_RESOURCE_LIMITS,
   });
   return new Promise<CompatibilityReport>((resolve, reject) => {
     let settled = false;

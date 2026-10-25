@@ -1,15 +1,37 @@
 import { Consts, Int64, Kdbx, KdbxUuid, ProtectedValue, VarDictionary } from "@keenext/kdbxweb";
 import { credentials } from "./candidate.js";
+import type { Argon2Parameters } from "./defaults.js";
 import type { Cipher, Kdf } from "./preflight.js";
 
 export interface FixtureOptions {
   cipher: Cipher;
   kdf: Kdf;
   compression: "none" | "gzip";
+  /** Real Argon2 cost instead of the cheap fixture parameters (Argon2 KDFs only). */
+  argon2?: Argon2Parameters;
 }
 
 export const SYNTHETIC_PASSWORD = "synthetic-compatibility-only";
 export const FIXTURE_DATE = new Date("2025-01-02T03:04:05Z");
+
+/** Adds KeePass-shaped synthetic entries (two history states each) for sizing tests. */
+export function addSyntheticEntries(db: Kdbx, count: number, offset = 0, noteChars = 0): void {
+  const group = db.getDefaultGroup();
+  const notes = "Synthetic note text for calibration only. ".padEnd(noteChars, "x");
+  for (let index = offset; index < offset + count; index++) {
+    const entry = db.createEntry(group);
+    entry.fields.set("Title", `Synthetic entry ${index}`);
+    entry.fields.set("UserName", `user${index}@example.invalid`);
+    entry.fields.set("URL", `https://example.invalid/${index}`);
+    entry.fields.set("Notes", notes);
+    entry.tags = ["synthetic", "calibration"];
+    for (let state = 0; state < 2; state++) {
+      entry.fields.set("Password", ProtectedValue.fromString(`synthetic-${index}-${state}`));
+      entry.pushHistory();
+    }
+    entry.fields.set("Password", ProtectedValue.fromString(`synthetic-${index}`));
+  }
+}
 
 export async function createFixture(options: FixtureOptions): Promise<Kdbx> {
   const db = Kdbx.create(credentials(SYNTHETIC_PASSWORD), "Synthetic compatibility fixture");
@@ -31,10 +53,11 @@ export async function createFixture(options: FixtureOptions): Promise<Kdbx> {
   if (options.kdf === "aes") {
     parameters.set("R", VarDictionary.ValueType.UInt64, Int64.from(1000));
   } else {
-    // Deliberately cheap synthetic fixtures, never product defaults.
-    parameters.set("M", VarDictionary.ValueType.UInt64, Int64.from(1024 * 1024));
-    parameters.set("I", VarDictionary.ValueType.UInt64, Int64.from(2));
-    parameters.set("P", VarDictionary.ValueType.UInt32, 1);
+    // Deliberately cheap synthetic fixtures unless real cost is requested.
+    const argon2 = options.argon2 ?? { memoryBytes: 1024 * 1024, iterations: 2, parallelism: 1 };
+    parameters.set("M", VarDictionary.ValueType.UInt64, Int64.from(argon2.memoryBytes));
+    parameters.set("I", VarDictionary.ValueType.UInt64, Int64.from(argon2.iterations));
+    parameters.set("P", VarDictionary.ValueType.UInt32, argon2.parallelism);
     parameters.set("V", VarDictionary.ValueType.UInt32, 0x13);
   }
   const root = db.getDefaultGroup();
