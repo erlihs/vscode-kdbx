@@ -1,14 +1,38 @@
 import * as vscode from "vscode";
 import { runSelfTest } from "./self-test.js";
-import { DATABASE_EDITOR, LockedEditorProvider } from "./locked-editor.js";
+import { DATABASE_EDITOR, DatabaseEditorProvider } from "./database-editor.js";
+import { errorMessage } from "./editor-services.js";
 
+let activeEditor: DatabaseEditorProvider | undefined;
 export function activate(context: vscode.ExtensionContext): void {
-  const editor = new LockedEditorProvider(context.extension);
+  const editor = new DatabaseEditorProvider(context);
+  activeEditor = editor;
   context.subscriptions.push(
     editor,
     vscode.window.registerCustomEditorProvider(DATABASE_EDITOR, editor, {
       supportsMultipleEditorsPerDocument: true,
       webviewOptions: { retainContextWhenHidden: false },
+    }),
+    vscode.commands.registerCommand("kdbx.createDatabase", async () => {
+      try {
+        await editor.createDatabase();
+      } catch (error) {
+        await vscode.window.showErrorMessage(errorMessage(error));
+      }
+    }),
+    vscode.commands.registerCommand("kdbx.lockDatabase", async () => {
+      try {
+        await editor.lockActive();
+      } catch (error) {
+        await vscode.window.showErrorMessage(errorMessage(error));
+      }
+    }),
+    vscode.commands.registerCommand("kdbx.lockAllDatabases", async () => {
+      try {
+        await editor.lockAll();
+      } catch (error) {
+        await vscode.window.showErrorMessage(errorMessage(error));
+      }
     }),
     vscode.commands.registerCommand("kdbx.compatibilitySelfTest", async (options?: unknown) => {
       // Programmatic callers (the packaging smoke test) receive the report directly.
@@ -34,4 +58,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+  await activeEditor?.shutdown();
+  activeEditor = undefined;
+}

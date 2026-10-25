@@ -30,3 +30,13 @@ await build({
   entryPoints: ["../core/dist/session-worker.js"],
   outfile: "dist/session-worker.js",
 });
+await build({
+  entryPoints: ["src/webview.ts"],
+  outfile: "dist/webview.js",
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  target: "es2022",
+  legalComments: "external",
+  logLevel: "warning",
+});

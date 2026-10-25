@@ -5,9 +5,10 @@
 Phase 1's compatibility gate was **approved on 2026-10-25**: every row in
 [Gate blockers](#gate-blockers) is resolved with recorded evidence, and
 `pnpm compatibility -- --require-gate` succeeds. This document records that
-evidence, not production or release approval. Phase 2 now has a locked, read-only
-custom editor; the persistence/recovery constraints below remain requirements
-before unlocking and mutable workflows are introduced.
+evidence, not production or release approval. The interactive preview now wires
+the writable custom document and full workflow UI to worker sessions, encrypted
+persistence/recovery and trust/local-host restrictions. See the interactive
+milestone below for its separate validation and remaining acceptance gates.
 
 Run `pnpm check`, `pnpm compatibility`, `pnpm audit --prod`, `pnpm calibrate`,
 `pnpm smoke` and, with KeePass or KeePassXC available,
@@ -295,7 +296,7 @@ self-test workers ran:
 **Minimum VS Code version: 1.101.0**, the first release whose bundled Node (22)
 matches the core's Node 22 requirement.
 
-## Phase 2 locked-editor validation
+## Phase 2 locked-editor validation (historical foundation)
 
 The extension now also registers a binary read-only editor for `*.kdbx`, with
 scripts and local webview resources disabled. It renders an escaped filename and
@@ -343,8 +344,8 @@ Fixture-only parameters are **1 MiB, 2 passes, 1 lane** for Argon2 and **1,000
 rounds** for AES-KDF. They are deliberately weak to keep regression tests fast
 and are never creation defaults; new databases use `calibrateArgon2id`.
 
-The spec's proposed 10 MiB per-attachment ceiling applies to importing attachments
-and is not implemented; no attachment import or export API is exposed. Existing
+The 10 MiB per-attachment ceiling is enforced for new attachment imports.
+Explicit native import/export APIs and UI are implemented. Existing
 attachments are bounded in aggregate by the decoded-bytes ceiling. The public
 header inspector neither authenticates
 the database nor validates decrypted data. It must not be treated as an unlock
@@ -352,9 +353,9 @@ authorization or whole-file validator.
 
 ## Phase 2 core persistence and recovery foundation
 
-The UI-independent core now exposes a `DatabaseSessions` registry and persistent
-session workers. The read-only editor does not call it yet. This increment is not
-approval of a writable editor, recovery UX or a release/security gate.
+The UI-independent core exposes a `DatabaseSessions` registry and persistent
+session workers. The writable editor now calls these APIs. The original
+foundation evidence below is historical, not a release/security gate approval.
 
 - Canonical paths (including symlinked directory aliases and Windows case aliases)
   share one session within a registry. Mutations, encryption, backup, save and
@@ -388,11 +389,11 @@ approval of a writable editor, recovery UX or a release/security gate.
   recovery snapshot or permit blindly overwriting the original.
 - Save/discard deletes only snapshots owned by that session and still matching
   their revision. Older/orphan snapshots remain discoverable for explicit
-  selection/discard, not silent cleanup. The custom-document integration must
-  persist the returned backup reference and handle snapshot retention/disposal.
+  selection/discard, not silent cleanup. The custom-document integration stores
+  opaque backup references and handles snapshot retention/disposal.
 - As explicitly chosen, editor undo/redo resets at lock/recovery. KeePass entry
   history remains inside the encrypted KDBX. No separate decrypted undo payload
-  is persisted; the editor undo stack itself is not implemented yet.
+  is persisted. The interactive milestone implements worker-only bounded undo.
 - Mutation admission checks the actual escaped XML, protected ciphertext,
   pooled attachment sizes and entry history; rejected over-limit edits roll back.
   The KDBX DOM serializer encodes literal carriage returns as numeric character
@@ -425,6 +426,49 @@ VSIX passes both trusted and genuinely Restricted Mode smoke on VS Code 1.101.0
 including the persistent-worker edit/password-change/encrypt/reopen check.
 Maximum probe event-loop lag is 14-15 ms, against a 12 ms idle baseline.
 This is local evidence, not new Linux/macOS CI or writable-editor approval.
+
+## Interactive editor milestone
+
+The preview implements native custom-document save/Save As/revert/backup and
+undo callbacks, a nonce-CSP webview, calibrated creation, cancellable unlock,
+master-password changes, groups/entries/custom fields/tags/search,
+history/recycle bin, native attachment dialogs and password tools.
+Protected fields are masked in ordinary DTOs; reveal/copy is explicit.
+Clipboard clearing preserves another application's replacement value.
+
+Recovery discovery offers dated snapshots or irreversible confirmed discard.
+Lock/close reuses an unchanged verified snapshot; failed encrypted backup
+retains dirty unlocked data. Idle lock defaults to five minutes and can run
+while a native confirmation is unanswered; a resumed mutation cannot edit the
+locked session. Lock All attempts every session even if one fails.
+
+Forms require Apply before changes enter the backed-up model. Unapplied drafts
+are guarded in the UI but are not hot-exit persisted. Undo ends at lock/recovery;
+entry history remains encrypted. Same-URI split views are writable/shared;
+different aliases are read-only except the primary URI. Save As accepts new
+destinations only. Attachment export supports confirmed overwrite of regular
+files, preserves existing file permissions by writing the selected descriptor,
+refuses symlinks/open databases/their hard links and explicitly reports that a
+partial plaintext file may remain after an I/O failure.
+
+**Local automated verification:** strict type checks, Oxlint/Oxfmt and
+**247 tests pass**, with one POSIX-only permission test skipped on Windows.
+The 12 compatibility cases and production dependency audit pass. Provider tests
+use real workers to cover native callbacks, recovery across restart,
+backup-failure retention, clipboard ownership, exact binary export/overwrite,
+conflicts, Save As watcher rebinding, revert, idle/refocus and trust restrictions.
+Frontend tests and Chromium smoke cover workflows and secret concealment.
+
+Installed smoke checks the final VSIX's association/split views/close/reopen,
+default-editor escape hatch, bundled UI and command registration, plus packaged
+worker edit/undo/redo/password-change/encrypt/reopen and the original probes.
+The final package passes locally on Windows in both trust modes on VS Code
+**1.101.0 and 1.143.1**; maximum probe event-loop lag is **15–16 ms**, against
+15–17 ms idle baselines.
+It does **not** automate editing through the installed webview or native Save As
+handoff. Hands-on installed interactive acceptance, new Linux/macOS CI,
+accessibility, independent security review and release preparation remain gates;
+the passing automated checks do not approve production secret storage.
 
 ## References
 

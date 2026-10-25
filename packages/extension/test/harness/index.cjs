@@ -19,7 +19,7 @@ async function withSessionWorker(extension, run) {
     worker.on("error", reject);
     worker.on("exit", (code) => {
       if (pending)
-        reject(new Error(`The packaged session worker exited during a request (${code}).`));
+        reject(new Error(`The packaged session worker exited during ${pending.kind} (${code}).`));
     });
   });
   worker.on("message", (reply) => {
@@ -35,7 +35,7 @@ async function withSessionWorker(extension, run) {
     Promise.race([
       new Promise((resolve, reject) => {
         const id = ++sequence;
-        pending = { id, resolve, reject };
+        pending = { id, kind: command.kind, resolve, reject };
         worker.postMessage({ id, session, command });
       }),
       failure,
@@ -57,12 +57,14 @@ async function checkSessionWorker(extension) {
     });
     if (result.readOnlyReasons.length)
       throw new Error("The packaged session worker refused a modeled fixture.");
-    const id = await request({ kind: "createEntry", title: "packaged synthetic edit" });
+    const { value: id } = await request({ kind: "createEntry", title: "packaged synthetic edit" });
     await request({
       kind: "editEntry",
       entryId: id,
       fields: { Password: { value: "packaged synthetic secret", protected: true } },
     });
+    await request({ kind: "undo" });
+    await request({ kind: "redo" });
     await request({ kind: "changePassword", password: "new packaged synthetic password" });
     const encrypted = await request({ kind: "serialize" });
     if (!(encrypted instanceof ArrayBuffer) || encrypted.byteLength < 100) {
@@ -89,6 +91,7 @@ async function checkSessionWorker(extension) {
     ok: true,
     unlock: true,
     edit: true,
+    undoRedo: true,
     changePassword: true,
     serialize: true,
     reopen: true,
@@ -103,6 +106,16 @@ async function checkEditor(extension) {
   if (extension.extensionKind !== vscode.ExtensionKind.UI) {
     throw new Error("The database editor did not run in the local UI extension host.");
   }
+  await extension.activate();
+  const commands = await vscode.commands.getCommands(true);
+  for (const command of ["kdbx.createDatabase", "kdbx.lockDatabase", "kdbx.lockAllDatabases"]) {
+    if (!commands.includes(command))
+      throw new Error(`The installed UI command is missing: ${command}.`);
+  }
+  if (readFileSync(join(extension.extensionPath, "dist", "webview.js")).length < 1000) {
+    throw new Error("The installed VSIX is missing the interactive webview bundle.");
+  }
+  await vscode.commands.executeCommand("kdbx.lockAllDatabases");
   const uri = vscode.Uri.file(process.env.KDBX_EDITOR_FIXTURE);
   const tabs = () => vscode.window.tabGroups.all.flatMap((group) => [...group.tabs]);
   const customTabs = () =>
@@ -153,6 +166,8 @@ async function checkEditor(extension) {
     defaultAssociation: true,
     multipleViews: true,
     reopenWithDefault: true,
+    uiBundle: true,
+    lifecycleCommands: true,
   };
 }
 

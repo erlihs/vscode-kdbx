@@ -3,7 +3,7 @@
   "displayName": "KeePass Database Manager (preview)",
   "version": "0.0.0",
   "private": true,
-  "description": "Locked, read-only KDBX editor foundation with compatibility diagnostics. Unlocking and editing are not available yet.",
+  "description": "Local KeePass 4.1 database editor preview with encrypted recovery and compatibility diagnostics.",
   "categories": [
     "Other"
   ],
@@ -41,10 +41,35 @@
     ],
     "commands": [
       {
+        "command": "kdbx.createDatabase",
+        "title": "KeePass: Create Database"
+      },
+      {
+        "command": "kdbx.lockDatabase",
+        "title": "KeePass: Lock Database"
+      },
+      {
+        "command": "kdbx.lockAllDatabases",
+        "title": "KeePass: Lock All Databases"
+      },
+      {
         "command": "kdbx.compatibilitySelfTest",
         "title": "KeePass: Run Compatibility Self-Test (synthetic data)"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "KeePass",
+      "properties": {
+        "kdbx.idleLockMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 120,
+          "scope": "window",
+          "description": "Lock after this many minutes without database interaction. Set 0 to explicitly disable idle lock. Dirty changes are encrypted to recovery before locking."
+        }
+      }
+    }
   },
   "extensionKind": [
     "ui"

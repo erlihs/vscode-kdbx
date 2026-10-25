@@ -2,11 +2,12 @@
 
 **Phase 1 was approved on 2026-10-25**, following compatibility, calibration and
 installed-VSIX verification. Implementation of [the product specification](spec.md)
-has moved to **Phase 2: the locked editor and core session/persistence foundation**.
+has moved to an **interactive editor preview**, backed by worker-only database
+sessions and encrypted recovery.
 
-The preview now opens `.kdbx` files in a dedicated, locked, read-only editor.
-It does not read or decrypt database bytes, request credentials, edit, or save.
-This is **not yet a usable password manager**; continue using synthetic data only.
+The preview opens `.kdbx` files in a dedicated editor with an unlock form and
+group, entry, attachment and password-management workflows. It is **not release
+or security approved**; continue using synthetic data only.
 
 ## Development
 
@@ -35,7 +36,7 @@ pnpm compatibility
 - `pnpm calibrate`: measure new-database Argon2id settings and the worker heap
   needed at the XML ceilings on this machine (`-- --kdf` or `-- --heap` for one
   part; the heap part takes several minutes and fails above 75% of the heap).
-- `pnpm package`: bundle the smoke-test extension and build
+- `pnpm package`: bundle the preview extension and build
   `packages/extension/dist/kdbx.vsix`.
 - `pnpm smoke`: package, download VS Code (`VSCODE_VERSION`, default `stable`),
   install the VSIX and test the locked editor and worker in trusted and Restricted
@@ -45,16 +46,29 @@ CI runs on Windows, macOS and Linux with Node 22 and 24. Separate jobs run the
 round trip against KeePass 2.61.1 (Windows) and the distribution's KeePassXC
 (Ubuntu), and the VSIX smoke test on all three systems with VS Code 1.101.0 and
 stable. Line endings are pinned to LF by `.gitattributes`.
-Vite is supplied transitively by Vitest; a dedicated webview build will be
-introduced with the editor rather than adding an unused frontend now.
+Vite is supplied transitively by Vitest. The dependency-free webview is bundled
+with the extension's existing esbuild pipeline; no additional frontend framework
+or build tool is needed.
 
 ## Current implementation
 
-- A binary, read-only custom editor associated with `.kdbx` files. Multiple views,
-  clean close/reopen and VS Code's **Reopen Editor With** escape hatch are supported.
-- A script-free, theme-aware locked page with escaped filename rendering and a
-  restrictive Content Security Policy. No credentials or decrypted state enter
-  the webview.
+- A writable binary custom editor associated with `.kdbx` files, native
+  dirty/save/Save As/revert/backup and undo/redo integration, shared split views
+  and VS Code's **Reopen Editor With** escape hatch.
+- A themed webview with a restrictive nonce CSP and validated, per-panel message
+  channels. Protected fields are omitted from ordinary detail responses;
+  plaintext reaches the UI only for explicit reveal or editing. Restricted
+  pages remain script-free and contain no credential form.
+- Calibrated KDBX 4.1 creation, cancellable unlock, master-password changes,
+  manual/idle locking, encrypted recovery selection and confirmed discard.
+- Hierarchical groups; entry creation/editing/moving/duplication; multiline
+  notes, protected custom fields, tags, search, entry history and recycle bin.
+- Native attachment import/export, rename and removal, with a 10 MiB import
+  limit. Export warns that the file is decrypted and requires confirmation
+  before overwrite; open databases and their hard links cannot be overwritten.
+  There is no attachment preview, execution or automatic opening.
+- Cryptographically random password generation, explicit reveal/copy and
+  clipboard clearing after 30 seconds if the clipboard still contains our copy.
 - Database-access restrictions for Restricted Mode, browser/remote extension
   hosts, remote/virtual workspaces, non-file URIs and network-share authorities.
   The extension requests local UI-host placement. Granting workspace trust refreshes
@@ -117,27 +131,41 @@ Every Phase 1 gate requirement is met with recorded evidence:
 
 See [the compatibility assessment](docs/compatibility.md) for the evidence.
 
-## Trying the locked-editor preview
+## Trying the interactive preview
 
 1. Run `pnpm package`.
 2. Use **Extensions: Install from VSIX** and select
    `packages/extension/dist/kdbx.vsix`.
-3. Open a synthetic `.kdbx` file from Explorer. It should open in **KeePass Database**,
-   displaying its filename and the locked/read-only explanation, not binary text.
-4. Use **Reopen Editor With** to select another editor if needed.
+3. Open a synthetic `.kdbx` file from Explorer and unlock it, or run
+   **KeePass: Create Database** in the Command Palette.
+4. Create a group or entry. Entry detail forms use **Apply**: apply a form before
+   saving the database with normal VS Code Save.
+5. Try history, attachments, password generation, reveal/copy and locking.
+   **KeePass: Lock All Databases** locks all sessions in this extension host.
+6. Use **Reopen Editor With** to select another editor if needed.
 
-This stage intentionally uses a read-only custom-document provider, not a
-writable provider with placeholder save methods. It performs no database I/O and
-offers no password form or unlock action until a safe session and recovery path
-exists. Restricted Mode displays an explanation rather than offering a trust bypass.
-Remote and virtual workspaces are not supported, including local databases opened
-from those windows.
+Restricted Mode displays an explanation rather than offering a trust bypass.
+Remote and virtual workspaces are unsupported, including local databases opened
+from those windows. Unknown-data preservation restrictions make affected
+databases read-only rather than risking a lossy save.
 
-The installed-editor smoke now verifies association, multiple views, clean
-close/reopen, the default-editor escape hatch and unchanged fixture bytes in both
-trusted and genuinely untrusted workspaces. It passes locally on Windows with
-VS Code 1.143.1 and 1.101.0; the expanded smoke is configured for all CI platforms,
-but its new cross-platform results are not claimed until CI runs.
+Important preview behavior:
+
+- **Apply commits forms to the in-memory database; Save persists encryption.**
+  Visible, unapplied drafts are not included in native backups/hot exit.
+- Undo/redo is worker-only, bounded to 100 edits / 64 MiB of accounted edit data,
+  and ends at lock/recovery. Native callbacks from the previous unlock are
+  rejected. KeePass entry history persists independently.
+- Same-URI split views share edits. Different URI aliases of the same canonical
+  file are read-only except the original primary URI, avoiding divergent native
+  undo stacks.
+- Idle lock defaults to five minutes without database interaction.
+  `kdbx.idleLockMinutes` accepts 0–120; **0 explicitly disables idle locking**.
+  Hiding a panel or losing window focus conceals visible secrets.
+- Dirty lock/close encrypts recovery first. Backup failure is an error and keeps
+  the dirty worker available; do not assume failed recovery is on disk.
+- Save As currently requires a **new** destination. Concurrent editing from
+  other applications/windows and network/mapped filesystems remain unsupported.
 
 ## Core session/persistence API
 
@@ -160,8 +188,9 @@ await sessions.close(document);
 
 `state` exposes locked/dirty/read-only/conflict/credential-change status, explicit
 source-access/admission issues and an opaque recovery reference. `listEntries()`
-returns only explicit UUID/title
-summaries; no model or password is returned. Other operations are `editEntry()`,
+returns explicit summaries without protected plaintext. Group/entry CRUD,
+history, attachments, undo/redo and masked `getEntry()` details are available;
+`readField()` is an explicit plaintext read. Other operations include
 `changeMasterPassword(newPassword, confirmation)`, `saveAs()`, `backup()`, `lock()`
 and explicit `discardAndLock()`. Invalid XML field characters and edits exceeding
 the actual escaped XML/decoded-size limits (including entry history and protected
@@ -184,8 +213,7 @@ line endings, Unicode and XML metacharacters survive save/reopen unchanged.
   `discardRecovery()` after that session closes. Cleanup failures are reported
   separately from a successful save; clean lock still releases the worker.
 - Recovery preserves database contents and KeePass entry history, **not an editor
-  undo/redo stack**. Undo/redo ends at lock/recovery, as agreed; editable UI and its
-  undo integration remain future work.
+  undo/redo stack**. Undo/redo ends at lock/recovery, as agreed.
 
 Fingerprint checks cannot eliminate the cross-process check-to-replacement race.
 Do not edit the same file in multiple applications/windows concurrently. UNC
@@ -196,7 +224,7 @@ error requiring reconciliation or Save As, not a success result. A crash or
 cleanup failure can leave encrypted staging/recovery files; changing a password
 cannot revoke those older copies.
 
-Local Windows validation for this increment: **197 tests pass**, with one
+Local Windows validation for this increment: **247 tests pass**, with one
 POSIX-only permission test skipped; type/lint/format checks, all 12 compatibility
 cases and the production dependency audit pass. The final VSIX passes on
 VS Code **1.101.0 and 1.143.1**, in both trusted and genuinely Restricted Mode
@@ -205,12 +233,13 @@ validation of the new persistence paths still requires CI.
 
 ## Remaining product gates
 
-The next milestone is a trusted, writable custom-document lifecycle and unlock
-UI wired to this core: backup IDs, dirty-state events, save/conflict prompts,
-explicit recovery selection/discard, undo boundaries and close/deactivation
-handling. New-database creation, full group/entry/attachment UI, auto-lock,
-accessibility/security review and Marketplace publishing remain unimplemented.
-Phase 1 approval does not approve those later functional or release gates.
+The interactive workflow milestone is implemented, not a release approval.
+Next are hands-on installed-editor acceptance (especially real native Save As,
+hot exit and dialog/cancellation flows), Linux/macOS CI for the new workflows,
+accessibility and independent security review, broader real-world compatibility
+and performance testing, and Marketplace preparation. Unit/provider tests and
+browser smoke do not substitute for installed interactive acceptance. Phase 1
+approval does not approve these later functional or release gates.
 
 ## Privacy and safety
 
@@ -233,7 +262,7 @@ ceilings measured to stay well below the heap limit.
 Header inspection verifies only a public checksum, not authenticity or the
 encrypted payload. A passing probe is not a security review or release approval.
 
-The eventual extension cannot protect against malicious extensions, a
+The extension cannot protect against malicious extensions, a
 compromised host, process inspection, keyloggers or clipboard history.
 
 ## License

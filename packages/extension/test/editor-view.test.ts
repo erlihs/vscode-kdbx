@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editorRestriction, lockedEditorHtml } from "../src/editor-view.js";
+import { databaseEditorHtml, editorRestriction, lockedEditorHtml } from "../src/editor-view.js";
 import type { EditorEnvironment } from "../src/editor-view.js";
 
 const local = { scheme: "file", authority: "" };
@@ -45,6 +45,55 @@ describe("locked database view", () => {
     expect(html).toContain("has not been read, decrypted, or modified");
     expect(html).toContain("Reopen Editor With");
     expect(html).not.toMatch(/<(input|form|script|iframe)\b/i);
+  });
+
+  describe("interactive database view", () => {
+    it("loads only the nonce-authorized local browser entry", () => {
+      const first = databaseEditorHtml(
+        "vault.kdbx",
+        "opaque-channel",
+        "vscode-webview://editor/webview.js",
+      );
+      const nonce = /<style nonce="([^"]+)">/.exec(first)?.[1];
+      expect(nonce).toBeTruthy();
+      expect(first).toContain("default-src 'none'");
+      expect(first).toContain(`script-src 'nonce-${nonce}'`);
+      expect(first).toContain(`style-src 'nonce-${nonce}'`);
+      expect(first).toContain("base-uri 'none'; form-action 'none'");
+      expect(first).toContain(
+        `<script nonce="${nonce}" src="vscode-webview://editor/webview.js"></script>`,
+      );
+      expect(first).toContain('data-channel="opaque-channel"');
+      expect(databaseEditorHtml("vault.kdbx", "other", "local.js")).not.toContain(
+        `nonce="${nonce}"`,
+      );
+      expect(first).not.toMatch(/\bon\w+=|unsafe-inline|https?:\/\/|<iframe/i);
+    });
+
+    it("escapes every host-provided interpolation without creating executable markup", () => {
+      const html = databaseEditorHtml(
+        '<img src=x onerror="bad">',
+        '"><script>bad</script>',
+        'x" onerror="bad',
+      );
+      expect(html).not.toContain("<img");
+      expect(html).not.toContain("<script>bad");
+      expect(html).toContain("&lt;img src=x onerror=&quot;bad&quot;&gt;");
+      expect(html).toContain('data-channel="&quot;&gt;&lt;script&gt;bad&lt;/script&gt;"');
+      expect(html).toContain('src="x&quot; onerror=&quot;bad"');
+      expect(html.match(/<script\b/g)).toHaveLength(1);
+    });
+
+    it("provides themed responsive high-contrast and accessible initial content", () => {
+      const html = databaseEditorHtml("vault.kdbx", "channel", "webview.js");
+      expect(html).toContain('lang="en"');
+      expect(html).toContain('role="status"');
+      expect(html).toContain('aria-label="KeePass database editor"');
+      expect(html).toContain("--vscode-editor-background");
+      expect(html).toContain(":focus-visible");
+      expect(html).toContain("forced-colors: active");
+      expect(html).toContain("@media (max-width:");
+    });
   });
 
   it("escapes filenames and restriction messages as text", () => {

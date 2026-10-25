@@ -17,8 +17,17 @@ import type { EncryptedFile, FileRevision } from "./local-files.js";
 import { inspectHeader } from "./preflight.js";
 import { SerialQueue } from "./serial-queue.js";
 import { SessionClient } from "./session-client.js";
-import { isRecord, isSessionCommand } from "./session-protocol.js";
-import type { EntryFieldEdit, EntrySummary, SessionCommand } from "./session-protocol.js";
+import { isRecord, isSessionCommand, isWorkerState } from "./session-protocol.js";
+import type {
+  EntryDetails,
+  EntryFieldEdit,
+  EntrySummary,
+  EntryUpdate,
+  GroupSummary,
+  HistorySummary,
+  SessionCommand,
+  WorkerState,
+} from "./session-protocol.js";
 
 export interface RecoveryReference {
   /** Opaque filename within the registry's recovery directory; no database path or password. */
@@ -35,6 +44,8 @@ export interface DatabaseSessionState {
   readonly readOnly: boolean;
   readonly conflict: boolean;
   readonly credentialsChanged: boolean;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
   readonly recovery: RecoveryReference | undefined;
   readonly sourceIssue: Readonly<{ code: ErrorCode; message: string }> | undefined;
 }
@@ -67,6 +78,10 @@ async function recoverySource(path: string): Promise<{
 
 function prefix(path: string): string {
   return createHash("sha256").update(pathKey(path)).digest("hex");
+}
+
+function sameRevision(first: FileRevision, second: FileRevision): boolean {
+  return (Object.keys(first) as (keyof FileRevision)[]).every((key) => first[key] === second[key]);
 }
 
 function invalidRecovery(): never {
@@ -150,6 +165,68 @@ export class DatabaseSessions {
     }
   }
 
+  /** Creates only a new destination, with worker-calibrated AES256/KDBX4.1/Argon2id defaults. */
+  async createDatabase(
+    path: string,
+    password: string,
+    confirmation: string,
+    signal?: AbortSignal,
+  ): Promise<DatabaseSession> {
+    if (password !== confirmation || !isSessionCommand({ kind: "newDatabase", password })) {
+      throw new DatabaseError(
+        "INVALID_INPUT",
+        "The new master password must be nonempty and match its confirmation.",
+      );
+    }
+    path = await canonicalDestination(path);
+    const key = pathKey(path);
+    if (this.sessions.has(key))
+      throw new DatabaseError("CONFLICT", "The destination already has a shared session.");
+    const creating = (async () => {
+      throwIfCancelled(signal);
+      if (await readOptionalEncryptedFile(path))
+        throw new DatabaseError("CONFLICT", "The destination already exists.");
+      if ((await this.findRecovery(path)).length)
+        throw new DatabaseError(
+          "RECOVERY_REQUIRED",
+          "Encrypted recovery exists for this destination.",
+        );
+      const client = new SessionClient();
+      let stopping: Promise<void> | undefined;
+      const abort = (): void => {
+        stopping ??= client.stop();
+      };
+      const timeout = setTimeout(abort, 30_000);
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        throwIfCancelled(signal);
+        await client.request({ kind: "newDatabase", password });
+        throwIfCancelled(signal);
+        if (stopping) throw new DatabaseError("CANCELLED", "Database creation was cancelled.");
+        const result = await client.request({ kind: "serialize" });
+        if (!(result instanceof ArrayBuffer))
+          throw new DatabaseError("WORKER", "Invalid encrypted database.");
+        if (stopping) throw new DatabaseError("CANCELLED", "Database creation was cancelled.");
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
+        const revision = await writeEncryptedFile(path, new Uint8Array(result), null, signal);
+        return new DatabaseSession(this, path, revision, undefined, undefined, client);
+      } catch (error) {
+        await (stopping ?? client.stop());
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
+      }
+    })();
+    this.sessions.set(key, creating);
+    try {
+      return await creating;
+    } catch (error) {
+      if (this.sessions.get(key) === creating) this.sessions.delete(key);
+      throw error;
+    }
+  }
   private async createSession(
     path: string,
     recovery?: RecoveryReference,
@@ -229,8 +306,14 @@ export class DatabaseSession {
   private readOnly = false;
   private conflict = false;
   private credentialsChanged = false;
+  private canUndo = false;
+  private canRedo = false;
+  private modelRevision = 0;
+  private snapshotRevision: number | undefined;
   private recovery: RecoveryReference | undefined;
   private readonly ownedRecovery = new Map<string, FileRevision>();
+  private readonly disposedRecovery = new Map<string, string>();
+  private readonly knownRecovery = new Map<string, RecoveryReference>();
   private generation = 0;
   private cancelUnlock: (() => void) | undefined;
   private closed = false;
@@ -243,13 +326,16 @@ export class DatabaseSession {
     private revision: FileRevision | null,
     recovery?: RecoveryReference,
     sourceIssue?: DatabaseSessionState["sourceIssue"],
+    client?: SessionClient,
   ) {
     const sourceHash = recovery?.sourceHash ?? revision?.hash;
     if (!sourceHash) throw new DatabaseError("IO", "The source revision is unavailable.");
     this.sourceHash = sourceHash;
     this.sourceIssue = sourceIssue;
+    this.client = client;
     if (recovery) {
       this.recovery = Object.freeze({ ...recovery });
+      this.knownRecovery.set(recovery.id, this.recovery);
       this.dirty = true;
       this.credentialsChanged = recovery.credentialsChanged;
       this.conflict = revision?.hash !== recovery.sourceHash;
@@ -267,9 +353,22 @@ export class DatabaseSession {
       readOnly: this.readOnly,
       conflict: this.conflict,
       credentialsChanged: this.credentialsChanged,
+      canUndo: this.canUndo,
+      canRedo: this.canRedo,
       recovery: this.recovery,
       sourceIssue: this.sourceIssue,
     });
+  }
+
+  private applyWorkerState(value: unknown): void {
+    if (!isWorkerState(value))
+      throw new DatabaseError("WORKER", "The database worker returned invalid edit state.");
+    const state: WorkerState = value;
+    this.dirty = state.dirty;
+    this.credentialsChanged = state.credentialsChanged;
+    this.canUndo = state.canUndo;
+    this.canRedo = state.canRedo;
+    this.modelRevision = state.revision;
   }
 
   private active(): void {
@@ -313,6 +412,10 @@ export class DatabaseSession {
       if (recovery && encrypted.revision.hash !== recovery.snapshotHash) {
         throw new DatabaseError("CONFLICT", "The encrypted recovery snapshot changed externally.");
       }
+      const owned = recovery && this.ownedRecovery.get(recovery.id);
+      if (owned && !sameRevision(owned, encrypted.revision)) {
+        throw new DatabaseError("CONFLICT", "The encrypted recovery snapshot changed externally.");
+      }
       if (generation !== this.generation)
         throw new DatabaseError("CANCELLED", "Unlock was cancelled by locking.");
       throwIfCancelled(signal);
@@ -344,9 +447,22 @@ export class DatabaseSession {
         throwIfCancelled(signal);
         if (stopping || generation !== this.generation)
           throw new DatabaseError("CANCELLED", "Unlock was cancelled.");
+        this.canUndo = false;
+        this.canRedo = false;
+        this.modelRevision = 0;
+        if (recovery) {
+          this.applyWorkerState(
+            await client.request({
+              kind: "recover",
+              credentialsChanged: recovery.credentialsChanged,
+            }),
+          );
+          this.ownedRecovery.set(recovery.id, encrypted.revision);
+          this.knownRecovery.set(recovery.id, recovery);
+          this.snapshotRevision = 0;
+        } else this.snapshotRevision = undefined;
         this.client = client;
         this.readOnly = result.readOnlyReasons.length > 0;
-        if (recovery) this.ownedRecovery.set(recovery.id, encrypted.revision);
       } catch (error) {
         await (stopping ?? client.stop());
         throw error;
@@ -359,39 +475,53 @@ export class DatabaseSession {
   }
 
   listEntries(): Promise<readonly EntrySummary[]> {
-    return this.queue.run(async () => {
-      const result = await this.unlocked().request({ kind: "list" });
-      if (!Array.isArray(result))
-        throw new DatabaseError("WORKER", "The database worker returned invalid entries.");
-      return result.map((entry: unknown) => {
-        if (
-          !isRecord(entry) ||
-          typeof entry.id !== "string" ||
-          !entry.id.length ||
-          entry.id.length > 128 ||
-          typeof entry.title !== "string"
-        ) {
-          throw new DatabaseError("WORKER", "The database worker returned invalid entries.");
-        }
-        return { id: entry.id, title: entry.title };
-      });
-    });
+    return this.read({ kind: "list" });
   }
 
-  private mutate(command: SessionCommand, credentialsChanged = false): Promise<unknown> {
+  private read<T>(command: SessionCommand): Promise<T> {
+    if (!isSessionCommand(command))
+      return Promise.reject(new DatabaseError("INVALID_INPUT", "Invalid database operation."));
+    const copy = structuredClone(command);
+    return this.queue.run(async () => (await this.unlocked().request(copy)) as T);
+  }
+
+  /** Includes root and recycle-bin groups; filtering is the caller's responsibility. */
+  listGroups(): Promise<readonly GroupSummary[]> {
+    return this.read({ kind: "listGroups" });
+  }
+  /** Protected fields have no value property. No decrypted model leaves the worker. */
+  getEntry(entryId: string): Promise<EntryDetails> {
+    return this.read({ kind: "getEntry", entryId });
+  }
+  /** Explicit, selected-field disclosure; never cached by the session host. */
+  readField(entryId: string, name: string): Promise<string> {
+    return this.read({ kind: "readField", entryId, name });
+  }
+  listHistory(entryId: string): Promise<readonly HistorySummary[]> {
+    return this.read({ kind: "listHistory", entryId });
+  }
+  exportAttachment(entryId: string, name: string): Promise<ArrayBuffer> {
+    return this.read({ kind: "exportAttachment", entryId, name });
+  }
+
+  private mutate(command: SessionCommand): Promise<unknown> {
     if (!isSessionCommand(command))
       return Promise.reject(new DatabaseError("INVALID_INPUT", "Invalid database edit."));
     const copy = structuredClone(command);
     return this.queue.run(async () => {
       const result = await this.unlocked(true).request(copy);
-      this.dirty = true;
-      this.credentialsChanged ||= credentialsChanged;
-      return result;
+      if (!isRecord(result)) throw new DatabaseError("WORKER", "Invalid database edit result.");
+      this.applyWorkerState(result.state);
+      return result.value;
     });
   }
 
-  async createEntry(title: string): Promise<string> {
-    const result = await this.mutate({ kind: "createEntry", title });
+  async createEntry(title: string, groupId?: string): Promise<string> {
+    const result = await this.mutate({
+      kind: "createEntry",
+      title,
+      ...(groupId === undefined ? {} : { groupId }),
+    });
     if (typeof result !== "string")
       throw new DatabaseError(
         "WORKER",
@@ -401,7 +531,49 @@ export class DatabaseSession {
   }
 
   async editEntry(entryId: string, fields: Record<string, EntryFieldEdit>): Promise<void> {
-    await this.mutate({ kind: "editEntry", entryId, fields });
+    await this.updateEntry(entryId, { fields });
+  }
+
+  async updateEntry(entryId: string, update: EntryUpdate): Promise<void> {
+    await this.mutate({ kind: "updateEntry", entryId, update });
+  }
+  async createGroup(parentId: string, name: string): Promise<string> {
+    return (await this.mutate({ kind: "createGroup", parentId, name })) as string;
+  }
+  async renameGroup(groupId: string, name: string): Promise<void> {
+    await this.mutate({ kind: "renameGroup", groupId, name });
+  }
+  async moveGroup(groupId: string, parentId: string): Promise<void> {
+    await this.mutate({ kind: "moveGroup", groupId, parentId });
+  }
+  async deleteGroup(groupId: string, permanent = false): Promise<void> {
+    await this.mutate({ kind: "deleteGroup", groupId, permanent });
+  }
+  async duplicateEntry(entryId: string): Promise<string> {
+    return (await this.mutate({ kind: "duplicateEntry", entryId })) as string;
+  }
+  async deleteEntry(entryId: string, permanent = false): Promise<void> {
+    await this.mutate({ kind: "deleteEntry", entryId, permanent });
+  }
+  async restoreHistory(entryId: string, index: number): Promise<void> {
+    await this.mutate({ kind: "restoreHistory", entryId, index });
+  }
+  /** Imports at most 10 MiB, subject also to the database's decoded/XML/undo limits. */
+  async importAttachment(entryId: string, name: string, bytes: ArrayBuffer): Promise<void> {
+    await this.mutate({ kind: "importAttachment", entryId, name, bytes });
+  }
+  async renameAttachment(entryId: string, name: string, newName: string): Promise<void> {
+    await this.mutate({ kind: "renameAttachment", entryId, name, newName });
+  }
+  async removeAttachment(entryId: string, name: string): Promise<void> {
+    await this.mutate({ kind: "removeAttachment", entryId, name });
+  }
+  /** Worker-only object journal: at most 100 edits/64 MiB accounted data; reset on lock. */
+  async undo(): Promise<void> {
+    await this.mutate({ kind: "undo" });
+  }
+  async redo(): Promise<void> {
+    await this.mutate({ kind: "redo" });
   }
 
   async changeMasterPassword(password: string, confirmation: string): Promise<void> {
@@ -411,7 +583,7 @@ export class DatabaseSession {
         "The new master password must be nonempty and match its confirmation.",
       );
     }
-    await this.mutate({ kind: "changePassword", password }, true);
+    await this.mutate({ kind: "changePassword", password });
   }
 
   private async serialized(): Promise<Uint8Array<ArrayBuffer>> {
@@ -432,8 +604,10 @@ export class DatabaseSession {
         );
       }
       this.ownedRecovery.delete(id);
+      this.disposedRecovery.set(id, revision.hash);
     }
     this.recovery = undefined;
+    this.snapshotRevision = undefined;
   }
 
   save(signal?: AbortSignal): Promise<void> {
@@ -459,8 +633,7 @@ export class DatabaseSession {
         }
         throw error;
       }
-      this.dirty = false;
-      this.credentialsChanged = false;
+      this.applyWorkerState(await this.unlocked().request({ kind: "markSaved" }));
       await this.clearRecovery();
     });
   }
@@ -478,17 +651,32 @@ export class DatabaseSession {
         this.currentPath = target;
         this.conflict = false;
         this.sourceIssue = undefined;
-        this.dirty = false;
-        this.credentialsChanged = false;
       });
+      this.applyWorkerState(await this.unlocked().request({ kind: "markSaved" }));
       await this.clearRecovery();
     });
   }
 
-  private async snapshot(): Promise<RecoveryReference | undefined> {
+  private async snapshot(reuse = false): Promise<RecoveryReference | undefined> {
     this.active();
     if (!this.dirty) return undefined;
-    if (!this.client && this.recovery) return this.recovery;
+    if (
+      this.recovery &&
+      (!this.client || (reuse && this.snapshotRevision === this.modelRevision))
+    ) {
+      const existing = await readEncryptedFile(
+        recoveryPath(this.registry.recoveryDirectory, this.path, this.recovery),
+      );
+      if (existing.revision.hash !== this.recovery.snapshotHash) {
+        throw new DatabaseError("CONFLICT", "The encrypted recovery snapshot changed externally.");
+      }
+      const owned = this.ownedRecovery.get(this.recovery.id);
+      if (owned && !sameRevision(owned, existing.revision)) {
+        throw new DatabaseError("CONFLICT", "The encrypted recovery snapshot changed externally.");
+      }
+      this.ownedRecovery.set(this.recovery.id, existing.revision);
+      return this.recovery;
+    }
     const bytes = await this.serialized();
     const sourceHash = this.sourceHash;
     const id = `${prefix(this.path)}.${sourceHash}.${this.credentialsChanged ? "n" : "s"}.${randomUUID()}.kdbx`;
@@ -504,7 +692,9 @@ export class DatabaseSession {
       credentialsChanged: this.credentialsChanged,
     });
     this.ownedRecovery.set(id, revision);
+    this.knownRecovery.set(id, reference);
     this.recovery = reference;
+    this.snapshotRevision = this.modelRevision;
     return reference;
   }
 
@@ -512,15 +702,70 @@ export class DatabaseSession {
     return this.queue.run(() => this.snapshot());
   }
 
+  /** Disposes only owned, unchanged snapshots; retains the last dirty-locked recovery. */
+  deleteBackup(reference: RecoveryReference): Promise<void> {
+    const copy = { ...reference };
+    return this.queue.run(async () => {
+      const known = this.knownRecovery.get(copy.id);
+      if (
+        !known ||
+        known.sourceHash !== copy.sourceHash ||
+        known.snapshotHash !== copy.snapshotHash ||
+        known.credentialsChanged !== copy.credentialsChanged
+      )
+        invalidRecovery();
+      if (this.dirty && !this.client && this.recovery?.id === copy.id) {
+        throw new DatabaseError(
+          "RECOVERY_REQUIRED",
+          "The last current encrypted snapshot is required while dirty changes are locked.",
+        );
+      }
+      const revision = this.ownedRecovery.get(copy.id);
+      if (!revision) {
+        if (this.disposedRecovery.get(copy.id) === copy.snapshotHash) return;
+        invalidRecovery();
+      }
+      if (revision.hash !== copy.snapshotHash) invalidRecovery();
+      const file = join(this.registry.recoveryDirectory, known.id);
+      await removeEncryptedFile(file, revision);
+      this.ownedRecovery.delete(copy.id);
+      this.disposedRecovery.set(copy.id, copy.snapshotHash);
+      if (this.recovery?.id === copy.id) {
+        this.recovery = undefined;
+        this.snapshotRevision = undefined;
+      }
+    });
+  }
+
+  checkExternalChange(): Promise<boolean> {
+    return this.queue.run(async () => {
+      this.active();
+      const source = await recoverySource(this.path);
+      if (
+        !source.file ||
+        source.file.revision.hash !== this.sourceHash ||
+        (this.revision && !sameRevision(source.file.revision, this.revision))
+      ) {
+        this.conflict = true;
+        this.sourceIssue =
+          source.issue ??
+          Object.freeze({ code: "CONFLICT", message: "The original database changed externally." });
+      }
+      return this.conflict;
+    });
+  }
+
   lock(): Promise<RecoveryReference | undefined> {
     this.generation++;
     this.cancelUnlock?.();
     return this.queue.run(async () => {
       this.active();
-      const recovery = await this.snapshot();
+      const recovery = await this.snapshot(true);
       await this.client?.stop();
       this.client = undefined;
       this.readOnly = false;
+      this.canUndo = false;
+      this.canRedo = false;
       if (!this.dirty) await this.clearRecovery();
       return recovery;
     });
@@ -539,6 +784,8 @@ export class DatabaseSession {
       this.conflict = false;
       this.sourceIssue = undefined;
       this.credentialsChanged = false;
+      this.canUndo = false;
+      this.canRedo = false;
     });
   }
 
@@ -551,6 +798,8 @@ export class DatabaseSession {
       await this.client?.stop();
       this.client = undefined;
       this.readOnly = false;
+      this.canUndo = false;
+      this.canRedo = false;
       if (!this.dirty) await this.clearRecovery();
       this.closed = true;
       await this.registry.release(this);

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import { WORKER_RESOURCE_LIMITS } from "./defaults.js";
 import { DatabaseError } from "./errors.js";
-import { isRecord, isSessionCommand } from "./session-protocol.js";
+import { isRecord, isSessionCommand, isSessionResult } from "./session-protocol.js";
 import type { SessionCommand } from "./session-protocol.js";
 
 const ERROR_CODES = new Set([
@@ -34,7 +34,12 @@ export class SessionClient {
   private failure: DatabaseError | undefined;
   private stopping: Promise<void> | undefined;
   private pending:
-    | { id: number; resolve(value: unknown): void; reject(error: DatabaseError): void }
+    | {
+        id: number;
+        command: SessionCommand;
+        resolve(value: unknown): void;
+        reject(error: DatabaseError): void;
+      }
     | undefined;
 
   constructor() {
@@ -54,6 +59,12 @@ export class SessionClient {
         return;
       }
       if (reply.ok) {
+        if (!isSessionResult(pending.command, reply.result)) {
+          void this.stop(
+            new DatabaseError("WORKER", "The database worker returned invalid operation data."),
+          );
+          return;
+        }
         this.pending = undefined;
         pending.resolve(reply.result);
       } else if (
@@ -102,7 +113,7 @@ export class SessionClient {
       return Promise.reject(new DatabaseError("WORKER", "Database operations must be serialized."));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      this.pending = { id, resolve, reject };
+      this.pending = { id, command, resolve, reject };
       try {
         this.worker.postMessage(
           { id, session: this.session, command },

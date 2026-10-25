@@ -2,4 +2,5 @@
 !dist/extension.js
 !dist/probe-worker.js
 !dist/session-worker.js
+!dist/webview.js
 !dist/*.LEGAL.txt

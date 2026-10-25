@@ -9,4 +9,12 @@ export type { CompatibilityReport, ProbeOptions } from "./probe.js";
 export type { FixtureOptions } from "./fixture.js";
 export { DatabaseSessions } from "./sessions.js";
 export type { DatabaseSession, DatabaseSessionState, RecoveryReference } from "./sessions.js";
-export type { EntryFieldEdit, EntrySummary } from "./session-protocol.js";
+export type {
+  EntryFieldEdit,
+  EntryUpdate,
+  EntrySummary,
+  EntryDetails,
+  GroupSummary,
+  HistorySummary,
+} from "./session-protocol.js";
+export { SerialQueue } from "./serial-queue.js";
