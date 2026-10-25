@@ -5,6 +5,8 @@ export interface SelfTestCase {
   name: string;
   ok: boolean;
   ms: number;
+  /** Largest extension-host event-loop delay while this case ran. */
+  lagMs: number;
   detail?: string;
 }
 
@@ -14,6 +16,8 @@ export interface SelfTestReport {
   node: string;
   platform: string;
   arch: string;
+  /** Event-loop delay with no self-test work, attributable to VS Code itself. */
+  baselineLagMs: number;
   cases: SelfTestCase[];
   /** Largest extension-host event-loop delay observed while workers ran. */
   maxEventLoopLagMs: number;
@@ -27,16 +31,32 @@ const REFERENCE_ARGON2: Argon2Parameters = {
   parallelism: 2,
 };
 
-export async function runSelfTest(vscodeVersion: string): Promise<SelfTestReport> {
-  const cases: SelfTestCase[] = [];
-  let maxLag = 0;
+/** Tracks the largest event-loop delay; `take()` returns it and starts a new window. */
+function lagMonitor(): { take(): number; stop(): void } {
+  let max = 0;
   let expected = performance.now() + 20;
   const timer = setInterval(() => {
     const now = performance.now();
-    maxLag = Math.max(maxLag, now - expected);
+    max = Math.max(max, now - expected);
     expected = now + 20;
   }, 20);
+  return {
+    take() {
+      const value = Math.round(max);
+      max = 0;
+      return value;
+    },
+    stop: () => clearInterval(timer),
+  };
+}
+
+export async function runSelfTest(vscodeVersion: string): Promise<SelfTestReport> {
+  const cases: SelfTestCase[] = [];
+  const lag = lagMonitor();
+  let baselineLagMs = 0;
   try {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    baselineLagMs = lag.take();
     const matrix: FixtureOptions[] = [];
     for (const cipher of ["aes256", "chacha20"] as const) {
       for (const kdf of ["argon2id", "argon2d", "aes"] as const) {
@@ -63,18 +83,19 @@ export async function runSelfTest(vscodeVersion: string): Promise<SelfTestReport
           report.freshRandomness &&
           report.unknownDataRefused &&
           report.header.version === "4.1";
-        cases.push({ name, ok, ms: Math.round(performance.now() - start) });
+        cases.push({ name, ok, ms: Math.round(performance.now() - start), lagMs: lag.take() });
       } catch (error) {
         cases.push({
           name,
           ok: false,
           ms: Math.round(performance.now() - start),
+          lagMs: lag.take(),
           detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
         });
       }
     }
   } finally {
-    clearInterval(timer);
+    lag.stop();
   }
   return {
     vscode: vscodeVersion,
@@ -82,7 +103,8 @@ export async function runSelfTest(vscodeVersion: string): Promise<SelfTestReport
     node: process.versions.node,
     platform: process.platform,
     arch: process.arch,
+    baselineLagMs,
     cases,
-    maxEventLoopLagMs: Math.round(maxLag),
+    maxEventLoopLagMs: Math.max(0, ...cases.map((item) => item.lagMs)),
   };
 }

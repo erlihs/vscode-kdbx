@@ -56,7 +56,10 @@ try {
       `${report.platform}-${report.arch}`,
   );
   console.table(report.cases);
-  console.log(`Max extension-host event-loop lag: ${report.maxEventLoopLagMs} ms`);
+  console.log(
+    `Extension-host event-loop lag: baseline ${report.baselineLagMs} ms idle, ` +
+      `max ${report.maxEventLoopLagMs} ms while self-test workers ran`,
+  );
   const failed = report.cases.filter((item) => !item.ok);
   if (failed.length) throw new Error(`${failed.length} self-test cases failed.`);
   if (report.cases.length !== 13) throw new Error("The self-test did not run every case.");

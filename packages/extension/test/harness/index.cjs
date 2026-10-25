@@ -13,6 +13,8 @@ exports.run = async () => {
   if (fromInstall.startsWith("..") || isAbsolute(fromInstall)) {
     throw new Error(`Extension loaded from ${extension.extensionPath}, not the installed VSIX.`);
   }
+  // Let VS Code finish starting up so its own work does not count as ours.
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
   const report = await vscode.commands.executeCommand("kdbx.compatibilitySelfTest", {
     quiet: true,
   });
