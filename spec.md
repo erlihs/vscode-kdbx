@@ -2,9 +2,7 @@
 
 ## 1. Purpose and status
 
-Build and publish a VS Code extension that lets users manage KeePass password databases (`.kdbx`) without leaving the editor. Clicking a database in the Explorer opens a dedicated editor for unlocking the database and managing passwords, notes, and attached files such as certificates.
-
-A standalone command-line interface (CLI) provides the same core database operations for terminal users and controlled scripting.
+Build and publish a UI-only VS Code extension that provides a KeePass-style desktop app experience inside the editor, so users do not need to install a separate password-manager app. Clicking a database in the Explorer opens a dedicated editor for unlocking the database and managing passwords, notes, and attached files such as certificates.
 
 This document is the proposed product specification and implementation plan, not a claim that these capabilities already exist. The repository currently contains only a license. Product names, package names, and release defaults below are provisional.
 
@@ -26,8 +24,8 @@ There is no routine "decrypt file to disk" action. Plaintext database export is 
 3. Support master-password authentication, explicit locking, and automatic locking.
 4. Manage groups, password entries, small notes, custom fields, and binary attachments.
 5. Support safe saving, encrypted recovery, and detection of conflicting external writes.
-6. Offer a standalone CLI backed by the same application services as the extension.
-7. Publish a tested VS Code Marketplace package and a versioned CLI package.
+6. Keep database operations in a separate, UI-independent `core` package.
+7. Publish a tested VS Code Marketplace package.
 
 ### Initial platform scope
 
@@ -35,7 +33,6 @@ There is no routine "decrypt file to disk" action. Plaintext database export is 
 - Local filesystem databases only. Database creation requires a local destination.
 - Remote extension hosts, virtual filesystems, browser-hosted VS Code, and remote database URIs are unsupported initially. Explain this restriction rather than failing silently.
 - An installed local extension may open a local database while a remote workspace is active only if extension placement and local file access are verified to work correctly.
-- The CLI runs independently of VS Code. It does not attach to or reuse an unlocked editor session.
 
 ### Explicitly out of scope for the first release
 
@@ -67,13 +64,6 @@ Do not promise to distinguish an incorrect password from all forms of authentica
 3. Save with the normal VS Code Save command. The editor shows a dirty indicator before successful persistence.
 4. Close and reopen the database, then verify the saved content after unlocking.
 
-### Use the terminal
-
-1. Run a CLI command against an explicit database path.
-2. Enter the master password using a hidden interactive prompt.
-3. Select an entry by UUID or an unambiguous group/title path.
-4. Perform the operation, persist mutations safely, and exit without retaining an unlock session.
-
 ## 4. Functional requirements
 
 ### 4.1 Database lifecycle
@@ -81,7 +71,7 @@ Do not promise to distinguish an incorrect password from all forms of authentica
 - Register a custom editor for `*.kdbx`, while retaining VS Code's "Reopen Editor With" escape hatch.
 - Validate the signature, version, supported algorithms, and input/resource limits before expensive processing where possible.
 - Create new databases explicitly as KDBX 4.1, with AES-256 and Argon2id as the proposed defaults.
-- Support reading and writing KDBX 4.1 using AES-256 or ChaCha20 and Argon2id, Argon2d, or AES-KDF, subject to the compatibility gate in section 6.
+- Support reading and writing KDBX 4.1 using AES-256 or ChaCha20 and Argon2id, Argon2d, or AES-KDF, subject to the compatibility gate in section 5.
 - Preserve existing cipher, KDF parameters, compression, and supported metadata when saving. Never silently weaken security settings or downgrade the file format.
 - Reject other format versions in the first release with a clear message; do not silently convert them.
 - Change the master password with confirmation, saving the result through the same safe-write path.
@@ -132,8 +122,9 @@ Do not promise to distinguish an incorrect password from all forms of authentica
 - On save failure, retain the dirty document, report the error, and leave the previous valid database usable.
 - Track the loaded file's identity/content fingerprint and watch for external modification or deletion.
 - Refuse a conflicting write rather than silently overwriting. Offer reload/discard or Save As; do not auto-merge.
-- Serialize mutations and saves within a process. Coordinate writers across extension/CLI instances using an exclusive local writer lock and recheck the source fingerprint before replacement.
-- Document that non-cooperating applications and unusual filesystems can still introduce races. Recheck external changes and verify this behavior against KeePass.
+- Serialize mutations and saves for each database within an extension host, using the shared document/session. Recheck the source fingerprint immediately before replacement.
+- Treat writes from other VS Code windows, extension hosts, or password-manager applications as external changes. Fingerprint checks detect conflicts but do not guarantee protection against simultaneous cross-process writes.
+- Document the remaining check-to-replacement race and filesystem limitations, advise against editing the same database in multiple applications or windows at once, and verify external-change behavior against KeePass.
 - Implement encrypted custom-editor backups for VS Code hot exit. Never put plaintext in backups, global/workspace state, logs, or temporary files.
 - Recovery backups require the master password after restart. Credential-changing edits require an explicit recovery design so users know which password opens the backup.
 - Never discard dirty changes silently on manual lock, automatic lock, close, cancellation, or backup failure.
@@ -151,51 +142,16 @@ Proposed lock policy: before locking a dirty database, persist an encrypted reco
 - Use clear empty, loading, locked, dirty, conflict, and error states.
 - Respect Workspace Trust: disable workspace database access in Restricted Mode for the initial release, without offering an implicit bypass.
 
-## 5. CLI specification
-
-Provisional executable: `kdbx`. Paths and identifiers below are illustrative, not final syntax.
-
-| Command | Behavior |
-| --- | --- |
-| `kdbx create <database>` | Create a KDBX 4.1 database; confirm the new master password. |
-| `kdbx info <database>` | Show format/cipher/KDF information; private metadata requires authentication. |
-| `kdbx list <database> [--group <id>]` | List groups and entry summaries without secret values. |
-| `kdbx show <database> --entry <id>` | Show entry metadata; mask protected fields by default. |
-| `kdbx get <database> --entry <id> --field <name> --reveal` | Explicitly output one field, including a secret if requested. |
-| `kdbx add <database> [--group <id>]` | Create an entry using interactive prompts or explicit structured input. |
-| `kdbx edit <database> --entry <id>` | Update selected fields; prompt secretly for password values. |
-| `kdbx delete <database> --entry <id>` | Move an entry to the recycle bin; permanent deletion requires a separate flag and confirmation. |
-| `kdbx group <action> <database>` | List/create/rename/move/delete/restore groups. |
-| `kdbx restore <database> --entry <id>` | Restore an entry from the recycle bin. |
-| `kdbx history <action> <database> --entry <id>` | List entry revisions and restore a selected revision. |
-| `kdbx attachment <action> <database> --entry <id>` | List/add/rename/remove/export attachments. |
-| `kdbx passwd <database>` | Authenticate, enter/confirm a new password, and save safely. |
-
-Additional rules:
-
-- No master passwords or new secret values in command arguments, environment variables, shell history, or diagnostic output.
-- Noninteractive use requires an explicit protected input channel, such as a dedicated input descriptor/stream. Define its framing separately from structured mutation input; fail if credentials are unavailable instead of hanging on a prompt.
-- Do not accept commands that interpolate credentials into shell strings.
-- Support machine-readable JSON for metadata and operation results. Secret values remain excluded unless explicitly requested.
-- Send diagnostics to stderr and command results to stdout. Never echo credentials.
-- Explicit secret output can be redirected to plaintext and must be documented as intentional exposure.
-- Fail on ambiguous entry paths and suggest UUID-based selection.
-- Confirm destructive actions interactively; require explicit noninteractive confirmation flags.
-- Use stable exit codes: `0` success, `1` unexpected failure, `2` invalid arguments, `3` authentication failure, `4` unsupported/corrupt database, `5` conflict, `6` I/O/permission failure, `7` resource limit, `130` cancellation.
-- Mutating commands are transactional: persist successfully or leave the original database unchanged.
-- There is no CLI unlock daemon; each command authenticates and releases session state on completion.
-
-## 6. Architecture and KDBX compatibility
+## 5. Architecture and KDBX compatibility
 
 ### Proposed implementation
 
-Use a TypeScript workspace with three packages:
+Use a TypeScript workspace with two packages:
 
 - `core`: KDBX adapter, database operations, validation, session lifecycle, safe persistence, and typed errors.
 - `extension`: VS Code commands, custom editor provider, webview UI, clipboard integration, and encrypted recovery.
-- `cli`: command parsing, hidden prompts, structured input/output, and adapters for terminal/file interactions.
 
-Keep VS Code APIs and terminal UI out of the core. Both frontends must use the same mutation, validation, and persistence rules.
+Keep VS Code APIs and UI concerns out of the core. The extension uses the core's mutation, validation, and persistence rules.
 
 Use a mature KDBX library rather than implementing cryptographic primitives or the file format from scratch. `kdbxweb` is the initial candidate, not a confirmed dependency. Its documentation requires an externally supplied Argon2 implementation; "supports KDBX 4" alone is not proof of complete KDBX 4.1 round-trip support.
 
@@ -221,7 +177,7 @@ If the candidate fails this gate, evaluate another maintained library before imp
 - Use a restrictive Content Security Policy, packaged local assets, escaped text rendering, no remote scripts, and no HTML/Markdown rendering of notes.
 - Do not fetch entry URLs or attachment content over the network. Opening a URL is an explicit, scheme-validated user action.
 
-## 7. Security and privacy requirements
+## 6. Security and privacy requirements
 
 - Database content and credentials remain local. No telemetry, analytics, network calls, or third-party secret services in the first release.
 - No password retention in VS Code SecretStorage in the first release; users unlock after restart.
@@ -236,7 +192,7 @@ If the candidate fails this gate, evaluate another maintained library before imp
 - Document the trust boundary: this is not a defense against malicious extensions, a compromised machine, keyloggers, or users who can inspect the process.
 - Explain that encrypted databases committed to Git still expose file history and may retain old secrets indefinitely; discourage committing sensitive databases without an explicit organizational policy.
 
-## 8. Verification and release acceptance
+## 7. Verification and release acceptance
 
 ### Required automated coverage
 
@@ -245,15 +201,14 @@ If the candidate fails this gate, evaluate another maintained library before imp
 - Wrong credentials, header/block tampering, truncated input, unsupported versions/algorithms, oversized inputs, and excessive KDF/decompression work.
 - Attachment byte-for-byte round trips, deduplication where provided by the library, unusual names, path traversal attempts, zero-byte files, and size boundaries.
 - Cancellation, lock during pending work, stale webview messages, backup failures, and absence of plaintext persistence.
-- Fault-injected interrupted saves, permission errors, full-disk errors, external edits/deletion, simultaneous writers, and stale writer locks.
+- Fault-injected interrupted saves, permission errors, full-disk errors, external edits/deletion, serialized same-host saves, and detectable conflicts from other windows or applications.
 - VS Code integration tests for Explorer association, save/save-as/revert, close prompts, undo/redo, auto-lock, encrypted hot exit, and recovery.
-- CLI subprocess tests for hidden input, input framing, exit codes, JSON output, secret redaction, confirmation behavior, and safe failure.
 - Windows, macOS, and Linux package smoke tests using synthetic credentials only.
 
 ### Interoperability acceptance
 
-- Open fixtures produced by KeePass, edit them through both frontends, and reopen them in KeePass without loss of supported data.
-- Open a newly created database in KeePass, modify it there, and reopen it in the extension and CLI.
+- Open fixtures produced by KeePass, edit them through the extension UI, and reopen them in KeePass without loss of supported data.
+- Open a newly created database in KeePass, modify it there, and reopen it in the extension.
 - Test both supported ciphers and all supported KDFs, not just the default combination.
 - Verify metadata preservation using fixtures that contain fields the UI does not edit.
 - Check representative KeePassXC files as an additional compatibility signal; KeePass and the official specification remain the primary reference.
@@ -268,7 +223,7 @@ If the candidate fails this gate, evaluate another maintained library before imp
 
 The first release is accepted only when compatibility, persistence/recovery, security, accessibility, and packaging checks pass. A successful editor demonstration alone is insufficient.
 
-## 9. Step-by-step implementation plan
+## 8. Step-by-step implementation plan
 
 ### Phase 1: Confirm compatibility and product defaults
 
@@ -276,13 +231,13 @@ The first release is accepted only when compatibility, persistence/recovery, sec
 2. Prototype library loading, mutation, saving, explicit 4.1 creation, and cross-application round trips.
 3. Select and validate an Argon2 implementation, worker approach, packaging strategy, and licenses.
 4. Measure memory/KDF costs and finalize safe resource limits, supported VS Code/Node versions, and default security settings.
-5. Record final CLI input framing, lock/recovery semantics, and unknown-data handling.
+5. Record final session-lock/recovery semantics, same-host write coordination, external-conflict limitations, and unknown-data handling.
 
 **Exit criterion:** verified compatibility matrix and no unresolved data-loss or cryptographic dependency blocker.
 
 ### Phase 2: Establish the project foundation
 
-1. Create the TypeScript workspace and core/extension/CLI packages.
+1. Create the TypeScript workspace and core/extension packages.
 2. Configure the existing package manager choice, strict type checking, linting, unit tests, builds, and CI.
 3. Add extension activation, `.kdbx` custom-editor registration, command contributions, and supported-environment checks.
 4. Add typed operation errors, message schemas, and synthetic test-fixture management.
@@ -294,8 +249,8 @@ The first release is accepted only when compatibility, persistence/recovery, sec
 1. Add format validation, bounded authentication/loading, creation, and explicit session locking.
 2. Implement groups, entries, custom fields, search, generation, attachments, history, and recycle-bin operations.
 3. Add credential changes and preservation checks for unedited metadata.
-4. Add writer coordination, fingerprint checks, safe save/save-as, and encrypted recovery primitives.
-5. Test failure injection and cross-application round trips before relying on this service from either frontend.
+4. Add per-database same-host write serialization, fingerprint checks, safe save/save-as, and encrypted recovery primitives.
+5. Test failure injection and cross-application round trips before relying on this service from the extension.
 
 **Exit criterion:** core operations satisfy the compatibility and persistence tests without UI dependencies.
 
@@ -309,50 +264,40 @@ The first release is accepted only when compatibility, persistence/recovery, sec
 
 **Exit criterion:** a user can complete the primary journeys entirely within VS Code, including recovery after restart.
 
-### Phase 5: Deliver CLI parity
-
-1. Implement command parsing, hidden prompts, explicit noninteractive input channels, and output formatting.
-2. Wire the command table to the shared core without duplicating business rules.
-3. Add destructive-action confirmations, stable exit codes, cancellation, and safe secret output.
-4. Verify simultaneous CLI/editor access refuses conflicting writes.
-5. Produce installable packages and terminal usage examples.
-
-**Exit criterion:** terminal users can create and maintain the same supported database content without VS Code.
-
-### Phase 6: Harden and validate
+### Phase 5: Harden and validate
 
 1. Run the complete cipher/KDF/metadata interoperability matrix.
 2. Exercise corruption, resource exhaustion, filesystem failures, external edits, and recovery scenarios.
 3. Review webview boundaries, logs, buffers, dependencies, and all persistent artifacts for secret exposure.
 4. Validate performance targets and keyboard/screen-reader behavior.
-5. Smoke-test packaged extension and CLI artifacts on all three operating systems.
+5. Smoke-test the packaged extension on all three operating systems.
 
 **Exit criterion:** release acceptance checks pass and known limitations are documented.
 
-### Phase 7: Publish and maintain
+### Phase 6: Publish and maintain
 
-1. Finalize name, icon, publisher identity, repository metadata, Marketplace categories, and CLI package availability.
+1. Finalize name, icon, publisher identity, repository metadata, and Marketplace categories.
 2. Write installation/usage documentation, supported-format matrix, privacy/security notes, limitations, and recovery instructions.
 3. Add changelog, contribution guidance, security-reporting instructions, and release checklist.
 4. Package a minimal VSIX with only required runtime assets, including Argon2/WASM resources if selected.
 5. Publish a pre-release build for interoperability feedback; fix release-blocking issues before stable publication.
-6. Publish the stable Marketplace extension and CLI package through an approved release workflow with protected publishing credentials.
+6. Publish the stable Marketplace extension through an approved release workflow with protected publishing credentials.
 7. Maintain dependency updates, regression fixtures, compatibility testing, and documented release/versioning practices.
 
-**Exit criterion:** users can install both published artifacts and complete a verified create/edit/save/reopen workflow.
+**Exit criterion:** users can install the published extension and complete a verified create/edit/save/reopen workflow entirely within VS Code.
 
-## 10. Decisions to finalize during Phase 1
+## 9. Decisions to finalize during Phase 1
 
 The following are proposals rather than implicit promises:
 
-- Final product name, publisher, CLI executable, and package distribution.
+- Final product name, publisher, and Marketplace distribution details.
 - Exact UI technology, KDBX library, Argon2 provider, minimum VS Code version, and extension placement.
 - New-database KDF parameters, maximum decoded sizes, KDF work limits, and attachment limits.
 - Recovery behavior for master-password changes, retention/cleanup policy, and recoverable undo state.
 - Whether optional inactivity-lock disabling and other security settings are appropriate for the target audience.
 - Later support for key files, older database formats, remote environments, or additional KeePass features.
 
-## 11. References
+## 10. References
 
 - [Official KDBX 4.1 format specification](https://keepass.info/help/kb/kdbx.html).
 - [KeePass documentation](https://keepass.info/help/base/index.html).
