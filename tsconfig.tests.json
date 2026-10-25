@@ -6,5 +6,9 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vitest.config.ts", "packages/core/test/**/*.ts"]
+  "include": [
+    "vitest.config.ts",
+    "packages/core/test/**/*.ts",
+    "packages/extension/test/**/*.test.ts"
+  ]
 }

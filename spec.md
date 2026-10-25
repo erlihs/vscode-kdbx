@@ -4,7 +4,7 @@
 
 Build and publish a UI-only VS Code extension that provides a KeePass-style desktop app experience inside the editor, so users do not need to install a separate password-manager app. Clicking a database in the Explorer opens a dedicated editor for unlocking the database and managing passwords, notes, and attached files such as certificates.
 
-This document is the proposed product specification and implementation plan, not a claim that these capabilities already exist. Implementation has started with a pnpm/TypeScript workspace and a synthetic Phase 1 compatibility harness; the compatibility gate has passed (see the assessment), and no user-facing extension is implemented yet; the only extension is a packaging smoke test. See [the compatibility assessment](docs/compatibility.md) for evidence and blockers, and [the README](README.md) for development commands. Product names, package names, and release defaults below are provisional.
+This document is the proposed product specification and implementation plan, not a claim that all these capabilities already exist. Phase 1 was approved on 2026-10-25 after compatibility, defaults/calibration and installed-VSIX checks. Phase 2 now provides a locked, read-only custom editor with local-environment and Workspace Trust restrictions. It deliberately performs no database I/O and cannot unlock, edit or save yet; a read-only provider is used until the writable session/persistence/recovery lifecycle is implemented. See [the compatibility assessment](docs/compatibility.md) for Phase 1 evidence and [the README](README.md) for current scope and development commands. Product names, package names, and release defaults below are provisional.
 
 ### Key terminology
 

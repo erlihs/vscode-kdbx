@@ -2,11 +2,12 @@
 
 ## Status and reproducibility
 
-Phase 1's compatibility gate is **passed**: every row in [Gate blockers](#gate-blockers)
-is resolved with recorded evidence, and `pnpm compatibility -- --require-gate`
-succeeds. This document records that evidence, not a production compatibility
-promise; the persistence/recovery constraints below remain design requirements for
-the editor.
+Phase 1's compatibility gate was **approved on 2026-10-25**: every row in
+[Gate blockers](#gate-blockers) is resolved with recorded evidence, and
+`pnpm compatibility -- --require-gate` succeeds. This document records that
+evidence, not production or release approval. Phase 2 now has a locked, read-only
+custom editor; the persistence/recovery constraints below remain requirements
+before unlocking and mutable workflows are introduced.
 
 Run `pnpm check`, `pnpm compatibility`, `pnpm audit --prod`, `pnpm calibrate`,
 `pnpm smoke` and, with KeePass or KeePassXC available,
@@ -26,11 +27,11 @@ Windows/macOS/Linux and Node 22/24; all six combinations passed `pnpm check`,
 
 ## Candidate evaluation
 
-| Candidate                          | Assessment                                                                                                                                                                                                                                            |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kdbxweb@2.1.1`                    | Rejected as a product dependency. The published package dates to 2021; its `@xmldom/xmldom@0.7.13` resolution has registry advisories. Source inspection also showed unbounded synchronous GZIP loading. It is not retained in the dependency graph.  |
-| `@keenext/kdbxweb@2.2.0-keenext.2` | Evaluated maintained fork, pinned exactly. Ships ESM, externalizes the DOM implementation, uses fflate 0.8 and fixes several upstream integrity/metadata defects. The synthetic matrix exercises this candidate. Still fails the complete gate below. |
-| `kdbx-wasm@0.3.1`                  | Additional registry/readme evaluation only, not adopted or executed. Advertises both ciphers and all three KDFs but that is not evidence of complete KDBX 4.1 metadata preservation or bounded loading.                                               |
+| Candidate                          | Assessment                                                                                                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kdbxweb@2.1.1`                    | Rejected as a product dependency. The published package dates to 2021; its `@xmldom/xmldom@0.7.13` resolution has registry advisories. Source inspection also showed unbounded synchronous GZIP loading. It is not retained in the dependency graph.    |
+| `@keenext/kdbxweb@2.2.0-keenext.2` | Evaluated maintained fork, pinned exactly. Ships ESM, externalizes the DOM implementation, uses fflate 0.8 and fixes several upstream integrity/metadata defects. Passes the Phase 1 gate with the tracked local patch and documented refusal policies. |
+| `kdbx-wasm@0.3.1`                  | Additional registry/readme evaluation only, not adopted or executed. Advertises both ciphers and all three KDFs but that is not evidence of complete KDBX 4.1 metadata preservation or bounded loading.                                                 |
 
 The selected spike supplies `@xmldom/xmldom@0.9.12` and `hash-wasm@4.12.0`
 explicitly. All are MIT licensed; the fork transitively uses MIT-licensed
@@ -42,8 +43,8 @@ replace source, maintenance, transitive-license or release-time review.
 The fork's type declarations contain extensionless ESM imports. Type checking
 uses bundler resolution with full declaration checking, not `skipLibCheck`.
 Our emitted runtime imports have explicit `.js` extensions and execute directly
-in Node, including the worker. A future VSIX bundle must separately verify all
-worker, DOM and embedded WASM assets.
+in Node, including the worker. The installed VSIX checks below verify the bundled
+worker, DOM and embedded WASM assets; future packaging changes must preserve them.
 
 ## Automated evidence
 
@@ -212,7 +213,7 @@ Findings that shaped the adapter:
 | Protected empty values   | **Resolved** by the [local candidate patch](#local-candidate-patch); every matrix case round-trips an empty protected field.                                                                                                                                                                                                                                                                                                                                                                      |
 | Argon2 versions          | **Resolved by policy.** KeePass always writes Argon2 1.3 and KeePassXC defaults to it ([source](https://github.com/keepassxreboot/keepassxc/blob/develop/src/crypto/kdf/Argon2Kdf.cpp)); neither UI exposes the version, so 1.0 files come only from third-party tools. Version 1.0 is refused as `UNSUPPORTED` during preflight, before any key derivation, and the provider adapter independently refuses to derive with the wrong version. `hash-wasm` (1.3 only) is accepted as the provider. |
 | Resource limits          | **Resolved** as enforceable admission ceilings: encrypted input, header, KDF work, decoded bytes (including aggregate attachments), XML size, elements and depth (bounding history). Values remain experimental; see below.                                                                                                                                                                                                                                                                       |
-| Defaults/performance     | **Resolved**; see [Defaults and performance](#defaults-and-performance). New-database Argon2id is calibrated to about one second above a 64 MiB floor, worker heap and XML ceilings are measured together, and real-cost key derivation leaves the VS Code extension host responsive (≤ 15 ms lag).                                                                                                                                                                                               |
+| Defaults/performance     | **Resolved**; see [Defaults and performance](#defaults-and-performance). New-database Argon2id is calibrated to about one second above a 64 MiB floor, worker heap and XML ceilings are measured together, and real-cost key derivation remains within the tested 250 ms host-lag ceiling. See the per-platform baseline/lag measurements below.                                                                                                                                                  |
 | Platform/packaging       | **Resolved**; see [VS Code host and VSIX packaging](#vs-code-host-and-vsix-packaging). The packaged VSIX passes in the extension host of VS Code 1.101.0 (the declared minimum) and stable, on Windows, macOS and Linux.                                                                                                                                                                                                                                                                          |
 
 Passing characterization tests means a limitation is reproducible, **not** that a
@@ -269,7 +270,7 @@ before resolving (tested).
 
 ## VS Code host and VSIX packaging
 
-`packages/extension` is a minimal, non-product extension with one command,
+The Phase 1 version of `packages/extension` was a minimal, non-product extension with one command,
 **KeePass: Run Compatibility Self-Test (synthetic data)**, which runs the full
 probe matrix plus a reference-cost case in the extension host. esbuild bundles it
 as CommonJS: `extension.js` and `probe-worker.js`, with the patched candidate,
@@ -293,6 +294,28 @@ self-test workers ran:
 
 **Minimum VS Code version: 1.101.0**, the first release whose bundled Node (22)
 matches the core's Node 22 requirement.
+
+## Phase 2 locked-editor validation
+
+The extension now also registers a binary read-only editor for `*.kdbx`, with
+scripts and local webview resources disabled. It renders an escaped filename and
+either a locked-preview explanation or an environment/trust restriction. It does
+not read database bytes, solicit credentials or persist document state.
+
+The expanded installed-VSIX smoke opens a synthetic fixture using the default file
+association, opens a second view, verifies no dirty state, closes/reopens, and uses
+the default-editor escape hatch. It asserts that fixture bytes remain unchanged.
+It runs in both trusted and Restricted Mode workspaces, explicitly asserting
+`workspace.isTrusted` in each, and preserves the thirteen worker self-test cases.
+The standard test-electron runner always disables workspace trust, so the harness
+is launched explicitly when testing genuine Restricted Mode rather than accepting
+a simulated untrusted flag.
+
+Local Windows validation passes on VS Code 1.143.1 and 1.101.0. New CI results for
+this expanded smoke on the other platforms have not been observed yet. Unit tests
+cover URI/host/trust refusal, escaping, CSP and the absence of credential controls.
+The original Phase 1 platform evidence above remains historical evidence, not a
+claim that the new editor has already passed those CI jobs.
 
 ## Experimental limits
 

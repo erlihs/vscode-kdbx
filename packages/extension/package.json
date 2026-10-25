@@ -1,9 +1,9 @@
 {
   "name": "kdbx",
-  "displayName": "KeePass Database Manager (compatibility smoke test)",
+  "displayName": "KeePass Database Manager (preview)",
   "version": "0.0.0",
   "private": true,
-  "description": "Phase 1 packaging check: runs the synthetic KDBX compatibility probe inside VS Code. Not a password manager.",
+  "description": "Locked, read-only KDBX editor foundation with compatibility diagnostics. Unlocking and editing are not available yet.",
   "categories": [
     "Other"
   ],
@@ -27,6 +27,18 @@
     "esbuild": "0.28.2"
   },
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "kdbx.database",
+        "displayName": "KeePass Database",
+        "selector": [
+          {
+            "filenamePattern": "*.kdbx"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "commands": [
       {
         "command": "kdbx.compatibilitySelfTest",
@@ -34,7 +46,20 @@
       }
     ]
   },
+  "extensionKind": [
+    "ui"
+  ],
   "engines": {
     "vscode": "^1.101.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Database access is disabled in Restricted Mode. The editor only explains the restriction."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Only local filesystem databases in a local desktop window are supported."
+    }
   }
 }

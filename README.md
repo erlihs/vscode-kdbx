@@ -1,9 +1,12 @@
 # KeePass Database Manager for VS Code
 
-Implementation of [the product specification](spec.md) has completed its
-**Phase 1 compatibility gate**. This is still an experimental, synthetic-data-only
-research harness, **not an installable password manager**: the only extension is
-a packaging smoke test. Do not use it with real credentials or databases.
+**Phase 1 was approved on 2026-10-25**, following compatibility, calibration and
+installed-VSIX verification. Implementation of [the product specification](spec.md)
+has moved to **Phase 2: the locked-editor foundation**.
+
+The preview now opens `.kdbx` files in a dedicated, locked, read-only editor.
+It does not read or decrypt database bytes, request credentials, edit, or save.
+This is **not yet a usable password manager**; continue using synthetic data only.
 
 ## Development
 
@@ -35,7 +38,8 @@ pnpm compatibility
 - `pnpm package`: bundle the smoke-test extension and build
   `packages/extension/dist/kdbx.vsix`.
 - `pnpm smoke`: package, download VS Code (`VSCODE_VERSION`, default `stable`),
-  install the VSIX and run its self-test in the extension host.
+  install the VSIX and test the locked editor and worker in trusted and Restricted
+  Mode windows.
 
 CI runs on Windows, macOS and Linux with Node 22 and 24. Separate jobs run the
 round trip against KeePass 2.61.1 (Windows) and the distribution's KeePassXC
@@ -46,6 +50,15 @@ introduced with the editor rather than adding an unused frontend now.
 
 ## Current implementation
 
+- A binary, read-only custom editor associated with `.kdbx` files. Multiple views,
+  clean close/reopen and VS Code's **Reopen Editor With** escape hatch are supported.
+- A script-free, theme-aware locked page with escaped filename rendering and a
+  restrictive Content Security Policy. No credentials or decrypted state enter
+  the webview.
+- Database-access restrictions for Restricted Mode, browser/remote extension
+  hosts, remote/virtual workspaces, non-file URIs and network-share authorities.
+  The extension requests local UI-host placement. Granting workspace trust refreshes
+  an open restriction page; it does not unlock anything.
 - pnpm workspace, strict TypeScript, native type checking, Ox tools and CI.
 - Bounded, unauthenticated KDBX 4.1 header inspection, with explicit unsupported
   version/cipher/KDF errors and resource admission ceilings.
@@ -70,11 +83,11 @@ introduced with the editor rather than adding an unused frontend now.
   a 64 MiB floor (128 MiB × 7 iterations on the reference machine), and the XML
   ceilings (500,000 elements, 32 Mi characters) are measured to fit within 55% of
   the 2 GiB worker heap.
-- A minimal smoke-test extension (`packages/extension`) bundled into a VSIX whose
+- A preview extension (`packages/extension`) bundled into a VSIX whose
   self-test runs the probe inside the VS Code extension host. Minimum VS Code
   version: 1.101.0.
 
-## Gate status: passed
+## Phase 1 gate: approved
 
 Every Phase 1 gate requirement is met with recorded evidence:
 
@@ -94,11 +107,35 @@ Every Phase 1 gate requirement is met with recorded evidence:
 
 See [the compatibility assessment](docs/compatibility.md) for the evidence.
 
-The VS Code editor, user-facing database operations, persistence/recovery and
-Marketplace publishing have **not** been implemented; they are the next phase.
-The persistence and recovery constraints in the assessment remain design
-requirements for that work. This harness does not export an open/save API for
-real databases.
+## Trying the locked-editor preview
+
+1. Run `pnpm package`.
+2. Use **Extensions: Install from VSIX** and select
+   `packages/extension/dist/kdbx.vsix`.
+3. Open a synthetic `.kdbx` file from Explorer. It should open in **KeePass Database**,
+   displaying its filename and the locked/read-only explanation, not binary text.
+4. Use **Reopen Editor With** to select another editor if needed.
+
+This stage intentionally uses a read-only custom-document provider, not a
+writable provider with placeholder save methods. It performs no database I/O and
+offers no password form or unlock action until a safe session and recovery path
+exists. Restricted Mode displays an explanation rather than offering a trust bypass.
+Remote and virtual workspaces are not supported, including local databases opened
+from those windows.
+
+The installed-editor smoke now verifies association, multiple views, clean
+close/reopen, the default-editor escape hatch and unchanged fixture bytes in both
+trusted and genuinely untrusted workspaces. It passes locally on Windows with
+VS Code 1.143.1 and 1.101.0; the expanded smoke is configured for all CI platforms,
+but its new cross-platform results are not claimed until CI runs.
+
+## Remaining product gates
+
+Unlock/create, shared decrypted sessions, user-facing database operations,
+safe persistence/conflicts, encrypted recovery, and Marketplace publishing
+remain unimplemented. The next milestone is the session/persistence/recovery
+foundation before mutable editor workflows. Phase 1 approval does not approve
+those later functional, security, accessibility or release gates.
 
 ## Privacy and safety
 
@@ -106,7 +143,8 @@ Runtime probes use only generated synthetic data, stay in memory, make no
 network requests and do not write databases or plaintext snapshots to disk.
 `pnpm interop` and `pnpm calibrate` are the exceptions: they write synthetic
 databases to a temporary directory and delete them afterwards. `pnpm smoke`
-downloads VS Code into `packages/extension/.vscode-test/`.
+downloads VS Code into `packages/extension/.vscode-test/` and uses temporary
+synthetic fixtures and isolated profiles for its editor tests.
 Package installation and dependency auditing do use the package registry.
 Worker cancellation waits for termination. Node's worker heap limits **do not**
 bound WASM or ArrayBuffer memory, and exceeding one can abort the whole process

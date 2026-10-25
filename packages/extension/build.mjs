@@ -1,6 +1,4 @@
-// Bundles the extension and its probe worker as CommonJS, with every dependency
-// (including the patched KDBX library and embedded WASM) inlined; the VSIX ships
-// only these two files and package.json.
+// Bundles the editor and probe worker with their runtime dependencies and WASM.
 import { build } from "esbuild";
 
 const shared = {
