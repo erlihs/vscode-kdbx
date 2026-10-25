@@ -67,6 +67,22 @@ describe("unknown-data policy: preserve exactly or refuse writing", () => {
     await expect(saveDatabase(loaded)).rejects.toMatchObject({ code: "READ_ONLY" });
   });
 
+  it("treats equivalent KeePassXC spellings as lossless", async () => {
+    const bytes = await saveWithXml(await fixture(), (doc) => {
+      doc.getElementsByTagName("EnableAutoType")[0]!.textContent = "false";
+      doc.getElementsByTagName("Tags")[1]!.textContent = "one,two";
+      append(doc, "AutoType", "DefaultSequence");
+    });
+    expect((await loadDatabase(bytes, password())).readOnlyReasons).toEqual([]);
+  });
+
+  it("refuses a tag the candidate would split differently", async () => {
+    const bytes = await saveWithXml(await fixture(), (doc) => {
+      doc.getElementsByTagName("Tags")[1]!.textContent = "one:two";
+    });
+    expect((await loadDatabase(bytes, password())).readOnlyReasons).toHaveLength(1);
+  });
+
   it("refuses to write a database with an unknown inner header field", async () => {
     const db = await fixture();
     const write = db.header.writeInnerHeader.bind(db.header);

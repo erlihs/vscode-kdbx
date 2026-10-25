@@ -1,4 +1,4 @@
-import { Kdbx, KdbxContext, KdbxError, ProtectedValue, XmlUtils } from "@keenext/kdbxweb";
+import { Kdbx, KdbxContext, KdbxError, ProtectedValue, XmlNames, XmlUtils } from "@keenext/kdbxweb";
 import type { KdbxCredentials } from "@keenext/kdbxweb";
 import "./candidate.js";
 import { DatabaseError } from "./errors.js";
@@ -87,6 +87,8 @@ function xmlIsModeled(db: Kdbx): boolean {
   return true;
 }
 
+const KNOWN_ELEMENTS = new Set<string>(Object.values(XmlNames.Elem));
+
 function signature(
   root: Element,
   ids: WeakMap<ProtectedValue, number>,
@@ -115,7 +117,9 @@ function signature(
         if (id === undefined) ids.set(protectedValue, (id = counter.next++));
         value = `#protected:${id}`;
       } else {
-        value = node.textContent ?? "";
+        value = canonicalText(node.tagName, node.textContent ?? "");
+        // An empty, attribute-free known element carries the same meaning as its absence.
+        if (!value && !attributes.length && KNOWN_ELEMENTS.has(node.tagName)) return;
       }
     }
     const key = `${path}[${attributes.sort().join(",")}]${value}`;
@@ -124,4 +128,20 @@ function signature(
   };
   visit(root, "");
   return result;
+}
+
+/** Equivalent spellings written by KeePass, KeePassXC and the candidate. */
+function canonicalText(tagName: string, text: string): string {
+  if (tagName === XmlNames.Elem.Tags) {
+    // Only separators every reader agrees on; a tag the candidate would split differs.
+    return text
+      .split(/[;,]/)
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (tagName !== XmlNames.Elem.Value && /^(?:true|false|null)$/i.test(text)) {
+    return text.toLowerCase();
+  }
+  return text;
 }
