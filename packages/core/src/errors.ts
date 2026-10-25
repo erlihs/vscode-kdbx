@@ -6,7 +6,14 @@ export type ErrorCode =
   | "CANCELLED"
   | "COMPATIBILITY"
   | "READ_ONLY"
-  | "WORKER";
+  | "WORKER"
+  | "IO"
+  | "CONFLICT"
+  | "INVALID_INPUT"
+  | "LOCKED"
+  | "RECOVERY_REQUIRED"
+  | "RECOVERY_CLEANUP"
+  | "PERSISTENCE_UNCERTAIN";
 
 export class DatabaseError extends Error {
   constructor(

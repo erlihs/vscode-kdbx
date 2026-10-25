@@ -14,10 +14,17 @@ class BoundedDOMParser extends DOMParser {
   }
 }
 
-// Only the isolated compatibility worker imports this module.
+class FieldPreservingXMLSerializer extends XMLSerializer {
+  override serializeToString(...args: Parameters<XMLSerializer["serializeToString"]>): string {
+    // KDBX's generated DOM has text fields, not CDATA. XML would normalize literal CR to LF.
+    return super.serializeToString(...args).replace(/\r/g, "&#13;");
+  }
+}
+
+// Worker-internal DOM/crypto configuration; synthetic tests also import it directly.
 Object.defineProperties(globalThis, {
   DOMParser: { value: BoundedDOMParser, configurable: true },
-  XMLSerializer: { value: XMLSerializer, configurable: true },
+  XMLSerializer: { value: FieldPreservingXMLSerializer, configurable: true },
 });
 KdbxFormat.maxDecompressedBytes = INPUT_LIMITS.decodedBytes;
 

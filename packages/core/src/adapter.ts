@@ -5,7 +5,7 @@ import { DatabaseError } from "./errors.js";
 import { inspectHeader } from "./preflight.js";
 import type { HeaderInfo } from "./preflight.js";
 
-// Worker-internal: real-database open/save is not exported until the gate passes.
+// Worker-internal: decrypted models are not exposed through the public core API.
 
 export interface LoadedDatabase {
   readonly db: Kdbx;

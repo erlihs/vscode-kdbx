@@ -104,6 +104,9 @@ try {
     if (!report.editor?.ok || report.editor.trusted !== trusted) {
       throw new Error("The installed custom editor did not pass its environment/lifecycle checks.");
     }
+    if (!report.sessionWorker?.ok) {
+      throw new Error("The installed persistent session worker did not pass.");
+    }
     if (!original.equals(readFileSync(fixture)))
       throw new Error("The locked editor changed the database.");
     console.log(`OK: the packaged VSIX editor and worker passed in ${mode} mode.`);

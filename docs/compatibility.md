@@ -350,27 +350,81 @@ header inspector neither authenticates
 the database nor validates decrypted data. It must not be treated as an unlock
 authorization or whole-file validator.
 
-## Persistence and recovery constraints for subsequent implementation
+## Phase 2 core persistence and recovery foundation
 
-No save, safe-replacement or recovery-to-disk path exists yet. The following
-specification constraints remain mandatory:
+The UI-independent core now exposes a `DatabaseSessions` registry and persistent
+session workers. The read-only editor does not call it yet. This increment is not
+approval of a writable editor, recovery UX or a release/security gate.
 
-- Serialize mutation and persistence per canonical local path. Encrypt completely,
-  flush/close a restrictive adjacent temporary file, preserve destination
-  permissions and recheck the source fingerprint just before tested replacement.
+- Canonical paths (including symlinked directory aliases and Windows case aliases)
+  share one session within a registry. Mutations, encryption, backup, save and
+  lock are serialized. Each worker exclusively owns its decrypted database and
+  credentials, returning only explicit metadata or encrypted KDBX bytes.
+- Saves encrypt completely before adjacent exclusive staging, preserve POSIX
+  mode/ownership or Windows owner/DACL permissions, flush/close, recheck the
+  SHA-256/identity/timestamp fingerprint and replace. New destinations use a
+  non-overwriting link; Save As only accepts new destinations and rebinds the
+  session without changing the source. POSIX also flushes the containing directory;
+  Windows has no portable Node directory-flush equivalent.
 - Fingerprint checks are not cross-process transactions. A check-to-replacement
-  race remains; never advise editing the same file in multiple applications or
-  windows concurrently.
-- Dirty lock must persist encrypted recovery before releasing plaintext. Recovery
-  failure keeps the dirty session and requires Save, Retry or explicit Discard.
-- Recovery after credential changes must clearly identify which password unlocks
-  a backup, without persisting that password. The exact recovery UX and retention
-  policy are not finalized.
-- Decrypted undo state must not reach backup files. Whether to encrypt undo state
-  in an independent recovery envelope or explicitly end undo at a recovery
-  boundary needs a tested design before the custom-document implementation.
+  race remains. Concurrent applications/windows and network/mapped mounts remain
+  unsupported. A postcommit verification failure reports persistence uncertainty,
+  retains dirty changes and blocks blind retry against the original.
+- Dirty lock/close writes encrypted recovery before terminating the worker.
+  Recovery failure retains the dirty worker. Clean lock releases it even when
+  obsolete encrypted-backup cleanup fails; cleanup is a separately reported error.
+- As explicitly chosen, master-password changes are implemented now. Recovery
+  requires the **new/current password**, while the original source still requires
+  its previous password until Save succeeds. References record that change, not
+  the password. Changing credentials never revokes old files or snapshots.
+- Recovery uses unique ordinary encrypted KDBX snapshots: subsequent backups
+  cannot invalidate a previously returned reference. IDs contain only a canonical
+  path hash, original source hash, credential-change flag and random UUID;
+  references also include the encrypted snapshot hash. After restart, discovery
+  reconstructs those references without decrypting. Modified/deleted/corrupt
+  sources cause a conflict; recovered changes can be saved to a new destination.
+  Source-access/admission failures are explicitly returned in `state.sourceIssue`;
+  an unreadable, oversized or non-file source cannot block decrypting its selected
+  recovery snapshot or permit blindly overwriting the original.
+- Save/discard deletes only snapshots owned by that session and still matching
+  their revision. Older/orphan snapshots remain discoverable for explicit
+  selection/discard, not silent cleanup. The custom-document integration must
+  persist the returned backup reference and handle snapshot retention/disposal.
+- As explicitly chosen, editor undo/redo resets at lock/recovery. KeePass entry
+  history remains inside the encrypted KDBX. No separate decrypted undo payload
+  is persisted; the editor undo stack itself is not implemented yet.
+- Mutation admission checks the actual escaped XML, protected ciphertext,
+  pooled attachment sizes and entry history; rejected over-limit edits roll back.
+  The KDBX DOM serializer encodes literal carriage returns as numeric character
+  references so XML line-ending normalization cannot change edited text on reopen.
+  Unlock cancellation/deadlines await worker termination. Dirty saves/edits are
+  not killed by cancellation; filesystem cancellation is observed before commit.
 - No secrets, titles, paths, raw library exceptions or decrypted snapshots belong
-  in logs, persisted webview state or extension state.
+  in logs or persisted webview/extension state. The caller supplies private
+  application recovery storage and must enforce trusted/local host restrictions.
+
+Focused tests cover real-worker saves/reopen, independent and shared sessions,
+history/protected fields, password-change recovery across restart, failure to
+persist recovery, source conflicts/deletion/corruption, Save As, revision-guarded
+cleanup, write/flush/rename/full-disk/permission failures, postcommit uncertainty
+and XML-ceiling rollback. Windows tests compare effective owner/group/DACL rules
+and verify owner-only new files. POSIX permission tests are configured but local
+Windows results do not imply cross-platform approval.
+
+The VSIX also bundles `session-worker.js`. Installed smoke now exercises that
+worker's unlock/edit/password-change/encrypt/reopen path using only the harness's
+synthetic fixture, in addition to the original probes and locked-editor checks.
+This test does not enable database access in the Restricted Mode editor.
+
+**Local verification (2026-10-25, Windows/Node 22.19.0):** `pnpm check`
+passes strict source/test/extension type checks, Oxlint, Oxfmt and **197 tests**;
+the one POSIX-only mode/ownership case is skipped on Windows. The 12-case
+compatibility matrix and production dependency audit pass. The final installed
+VSIX passes both trusted and genuinely Restricted Mode smoke on VS Code 1.101.0
+(Electron 35.5.1/Node 22.15.1) and 1.143.1 (Electron 43.7.7/Node 24.21.0),
+including the persistent-worker edit/password-change/encrypt/reopen check.
+Maximum probe event-loop lag is 14-15 ms, against a 12 ms idle baseline.
+This is local evidence, not new Linux/macOS CI or writable-editor approval.
 
 ## References
 

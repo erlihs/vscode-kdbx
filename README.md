@@ -2,7 +2,7 @@
 
 **Phase 1 was approved on 2026-10-25**, following compatibility, calibration and
 installed-VSIX verification. Implementation of [the product specification](spec.md)
-has moved to **Phase 2: the locked-editor foundation**.
+has moved to **Phase 2: the locked editor and core session/persistence foundation**.
 
 The preview now opens `.kdbx` files in a dedicated, locked, read-only editor.
 It does not read or decrypt database bytes, request credentials, edit, or save.
@@ -73,6 +73,16 @@ introduced with the editor rather than adding an unused frontend now.
   would drop unmodeled XML or header data, plus a reviewed local patch of the
   candidate (`patches/`). Only the writer-name text of `Meta/Generator` is exempt
   from that check; unknown attributes or children there still force read-only.
+- A UI-independent shared-session service: canonical local paths share a persistent
+  worker, with serialized edits, password changes, saves and locks. Decrypted
+  databases and credentials remain in that worker.
+- Conflict-aware encrypted persistence: an adjacent exclusive staging file,
+  permission preservation, flush/close, fingerprint recheck and verified replacement.
+  Save As creates a new encrypted destination without changing the source.
+- Encrypted KDBX recovery before dirty lock/close. Failed backup retains the dirty
+  worker; recovered contents and KeePass entry history survive restart. Password
+  changes make recovery require the **new** password while the saved original
+  still requires the old password until Save succeeds.
 - Bounded decoded loading: streaming decompression against a per-load budget
   (captured when the load starts, shared by the payload and every compressed XML
   binary, never shared between concurrent loads) and an XML pre-scan (size,
@@ -129,22 +139,92 @@ trusted and genuinely untrusted workspaces. It passes locally on Windows with
 VS Code 1.143.1 and 1.101.0; the expanded smoke is configured for all CI platforms,
 but its new cross-platform results are not claimed until CI runs.
 
+## Core session/persistence API
+
+This foundation is **not connected to the read-only editor yet**. A future local,
+trusted custom-document provider should own one `DatabaseSessions` registry per
+host, rooted in private application recovery storage, not the workspace:
+
+```ts
+import { DatabaseSessions } from "@vscode-kdbx/core";
+
+const sessions = await DatabaseSessions.create(privateRecoveryDirectory);
+const snapshots = await sessions.findRecovery(databasePath);
+// Existing snapshots require explicit selection or discard; never silently ignore them.
+const document = await sessions.open(databasePath, selectedRecovery);
+await document.unlock(password, abortSignal);
+await document.createEntry("Example");
+await document.save();
+await sessions.close(document);
+```
+
+`state` exposes locked/dirty/read-only/conflict/credential-change status, explicit
+source-access/admission issues and an opaque recovery reference. `listEntries()`
+returns only explicit UUID/title
+summaries; no model or password is returned. Other operations are `editEntry()`,
+`changeMasterPassword(newPassword, confirmation)`, `saveAs()`, `backup()`, `lock()`
+and explicit `discardAndLock()`. Invalid XML field characters and edits exceeding
+the actual escaped XML/decoded-size limits (including entry history and protected
+ciphertext) are refused without retaining the failed edit. Valid carriage returns,
+line endings, Unicode and XML metacharacters survive save/reopen unchanged.
+
+- Unlock accepts cancellation and has a 30-second safety deadline. Lock cancels
+  an unfinished unlock. Already-dirty operations are serialized, not terminated
+  mid-save or mid-edit. Worker termination is awaited before a successful lock.
+- Save refuses an externally modified/deleted source and retains dirty changes.
+  Save As currently accepts **new destinations only**, re-encrypts with fresh
+  randomness and switches the shared session to the new path.
+- Recovery snapshots are ordinary encrypted KDBX files with unique opaque IDs.
+  They never overwrite a previously returned snapshot, even after a password
+  change. Restore with a selected reference from `findRecovery()`; changed,
+  corrupt, deleted, unreadable or oversized sources cause a conflict and require
+  Save As. Source-access failures are exposed in `state.sourceIssue`, not hidden.
+- Save/discard removes only owned, revision-checked snapshots. Older snapshots
+  from another session/restart remain discoverable and need explicit
+  `discardRecovery()` after that session closes. Cleanup failures are reported
+  separately from a successful save; clean lock still releases the worker.
+- Recovery preserves database contents and KeePass entry history, **not an editor
+  undo/redo stack**. Undo/redo ends at lock/recovery, as agreed; editable UI and its
+  undo integration remain future work.
+
+Fingerprint checks cannot eliminate the cross-process check-to-replacement race.
+Do not edit the same file in multiple applications/windows concurrently. UNC
+paths are refused; network/mapped mounts are unsupported. Directory flush is
+performed on POSIX; Windows flushes the file and verifies replacement but has no
+portable Node directory-flush equivalent. Persistence uncertainty is an explicit
+error requiring reconciliation or Save As, not a success result. A crash or
+cleanup failure can leave encrypted staging/recovery files; changing a password
+cannot revoke those older copies.
+
+Local Windows validation for this increment: **197 tests pass**, with one
+POSIX-only permission test skipped; type/lint/format checks, all 12 compatibility
+cases and the production dependency audit pass. The final VSIX passes on
+VS Code **1.101.0 and 1.143.1**, in both trusted and genuinely Restricted Mode
+windows, including the packaged persistent-worker round trip. Linux/macOS
+validation of the new persistence paths still requires CI.
+
 ## Remaining product gates
 
-Unlock/create, shared decrypted sessions, user-facing database operations,
-safe persistence/conflicts, encrypted recovery, and Marketplace publishing
-remain unimplemented. The next milestone is the session/persistence/recovery
-foundation before mutable editor workflows. Phase 1 approval does not approve
-those later functional, security, accessibility or release gates.
+The next milestone is a trusted, writable custom-document lifecycle and unlock
+UI wired to this core: backup IDs, dirty-state events, save/conflict prompts,
+explicit recovery selection/discard, undo boundaries and close/deactivation
+handling. New-database creation, full group/entry/attachment UI, auto-lock,
+accessibility/security review and Marketplace publishing remain unimplemented.
+Phase 1 approval does not approve those later functional or release gates.
 
 ## Privacy and safety
 
 Runtime probes use only generated synthetic data, stay in memory, make no
 network requests and do not write databases or plaintext snapshots to disk.
-`pnpm interop` and `pnpm calibrate` are the exceptions: they write synthetic
+`pnpm test`, `pnpm interop` and `pnpm calibrate` are the exceptions: they write synthetic
 databases to a temporary directory and delete them afterwards. `pnpm smoke`
 downloads VS Code into `packages/extension/.vscode-test/` and uses temporary
-synthetic fixtures and isolated profiles for its editor tests.
+synthetic fixtures and isolated profiles for its editor tests, and verifies the
+installed persistent worker can edit, change a password, encrypt and reopen.
+The core session API writes only encrypted KDBX data and non-secret recovery
+identifiers/fingerprints, never passwords or plaintext snapshots. Old copies
+and snapshots can still be unlocked with their original passwords; a password
+change does not revoke them.
 Package installation and dependency auditing do use the package registry.
 Worker cancellation waits for termination. Node's worker heap limits **do not**
 bound WASM or ArrayBuffer memory, and exceeding one can abort the whole process

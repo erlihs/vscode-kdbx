@@ -25,3 +25,8 @@ await build({
   entryPoints: ["../core/dist/probe-worker.js"],
   outfile: "dist/probe-worker.js",
 });
+await build({
+  ...shared,
+  entryPoints: ["../core/dist/session-worker.js"],
+  outfile: "dist/session-worker.js",
+});
