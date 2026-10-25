@@ -1,0 +1,29 @@
+{
+  "name": "vscode-kdbx",
+  "version": "0.0.0",
+  "private": true,
+  "description": "KeePass database editor for VS Code - compatibility spike",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsgo -b",
+    "typecheck": "tsgo -b && tsgo -p tsconfig.tests.json",
+    "test": "pnpm build && vitest run",
+    "compatibility": "pnpm build && node scripts/compatibility.mjs",
+    "lint": "oxlint",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "vitest": "5.0.5"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.28.0"
+}

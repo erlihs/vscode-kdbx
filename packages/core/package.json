@@ -1,0 +1,15 @@
+{
+  "name": "@vscode-kdbx/core",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "dependencies": {
+    "@keenext/kdbxweb": "2.2.0-keenext.2",
+    "@xmldom/xmldom": "0.9.12",
+    "hash-wasm": "4.12.0"
+  }
+}
