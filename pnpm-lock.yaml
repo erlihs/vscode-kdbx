@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@keenext/kdbxweb@2.2.0-keenext.2':
+    hash: 8e438638244e7b68e1cc00f991fbd450c497ce036931d8524a403e713491e3ba
+    path: patches/@keenext__kdbxweb@2.2.0-keenext.2.patch
+
 importers:
 
   .:
@@ -28,7 +33,7 @@ importers:
     dependencies:
       '@keenext/kdbxweb':
         specifier: 2.2.0-keenext.2
-        version: 2.2.0-keenext.2
+        version: 2.2.0-keenext.2(patch_hash=8e438638244e7b68e1cc00f991fbd450c497ce036931d8524a403e713491e3ba)
       '@xmldom/xmldom':
         specifier: 0.9.12
         version: 0.9.12
@@ -747,7 +752,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@keenext/kdbxweb@2.2.0-keenext.2':
+  '@keenext/kdbxweb@2.2.0-keenext.2(patch_hash=8e438638244e7b68e1cc00f991fbd450c497ce036931d8524a403e713491e3ba)':
     dependencies:
       fflate: 0.8.3
 

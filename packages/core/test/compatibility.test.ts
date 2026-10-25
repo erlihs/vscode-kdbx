@@ -14,8 +14,7 @@ describe("synthetic candidate compatibility (not independent KeePass interoperab
     expect(result.preserved).toBe(true);
     expect(result.freshRandomness).toBe(true);
     expect(result.encryptedBytes).toBeGreaterThan(0);
-    // This is a characterized release blocker, not an accepted writable-data policy.
-    expect(result.unknownXmlPreserved).toBe(false);
+    expect(result.unknownDataRefused).toBe(true);
   });
 
   it("cancels before starting a worker", async () => {

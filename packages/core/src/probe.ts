@@ -10,7 +10,7 @@ export interface CompatibilityReport {
   elapsedMs: number;
   preserved: true;
   freshRandomness: true;
-  unknownXmlPreserved: boolean;
+  unknownDataRefused: true;
 }
 
 export type WorkerReply =

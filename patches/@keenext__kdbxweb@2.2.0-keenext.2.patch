@@ -1,0 +1,27 @@
+diff --git a/dist/index.js b/dist/index.js
+index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..80784d54d012349ffd07f0bc3bb15a1a6e041d49 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -4417,6 +4417,9 @@ var KdbxHeader = class _KdbxHeader {
+     const size = this.readFieldSize(stm);
+     const bytes = size > 0 ? stm.readBytes(size) : new ArrayBuffer(0);
+     const headerField = fields[headerId];
++    if (!headerField || headerField.name === "Comment") {
++      (this.droppedFieldIds ??= []).push(headerId);
++    }
+     if (!headerField) {
+       return true;
+     }
+diff --git a/dist/types/format/kdbx-header.d.ts b/dist/types/format/kdbx-header.d.ts
+index 65ead93589f79bc3f49e6430024b9408160bd4f5..ca9abca19c648fea3b4825d8bf6905bba2b7b510 100644
+--- a/dist/types/format/kdbx-header.d.ts
++++ b/dist/types/format/kdbx-header.d.ts
+@@ -18,6 +18,8 @@ export declare class KdbxHeader {
+     endPos: number | undefined;
+     kdfParameters: VarDictionary | undefined;
+     publicCustomData: VarDictionary | undefined;
++    /** IDs of unknown or Comment header fields that were read but will not be written. */
++    droppedFieldIds?: number[];
+     private readSignature;
+     private writeSignature;
+     private readVersion;

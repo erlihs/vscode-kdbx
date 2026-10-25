@@ -1,2 +1,5 @@
 packages:
   - packages/*
+
+patchedDependencies:
+  "@keenext/kdbxweb@2.2.0-keenext.2": patches/@keenext__kdbxweb@2.2.0-keenext.2.patch

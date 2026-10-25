@@ -14,8 +14,10 @@ ordinary default timestamps and cryptographic randomness vary.
 The initial local validation environment is Windows x64, Node 22.19.0,
 pnpm 10.28.0. Measurements concern cheap fixtures and multiple load/save
 operations, not a calibrated production unlock time. The CI matrix covers
-Windows/macOS/Linux and Node 22/24, but requires actual successful CI runs before
-cross-platform claims.
+Windows/macOS/Linux and Node 22/24; all six combinations passed `pnpm check`,
+`pnpm compatibility` and `pnpm audit --prod` in
+[run 2](https://github.com/erlihs/vscode-kdbx/actions/runs/40194006537).
+`.gitattributes` pins LF line endings so Windows checkouts match the formatter.
 
 ## Candidate evaluation
 
@@ -43,9 +45,10 @@ worker, DOM and embedded WASM assets.
 For **each** of the twelve cipher/KDF/compression combinations:
 
 1. Create a database, explicitly set version 4.1, and assert the on-disk header.
-2. Save/load and compare a semantic synthetic snapshot.
+2. Load it through the worker-internal adapter, confirm it is writable and compare
+   a semantic synthetic snapshot.
 3. Edit a protected password, push history, save and reopen; compare again.
-4. Confirm fresh save randomness and characterize unknown XML loss.
+4. Confirm fresh save randomness and that unknown XML makes the database read-only.
 
 Snapshot checks include cipher/KDF settings, compression, stable UUIDs, duplicate
 titles, tabs, tags, creation/modification times, previous-parent references,
@@ -76,18 +79,44 @@ End-of-header marker contents are not assumed to match the recommended CRLF
 bytes; the candidate uses a different marker. Independent interoperability must
 confirm acceptance of its complete files.
 
+## Unknown-data policy
+
+The candidate rebuilds XML from its model on save, so anything it does not model
+would be silently dropped. The worker-internal adapter (`packages/core/src/adapter.ts`)
+therefore **refuses a writable round trip** instead of preserving opaque data:
+
+- It loads with the original XML retained, rebuilds XML from the loaded model and
+  requires every original element path, attribute and leaf value to reappear.
+  Protected values are compared by object identity, so no plaintext enters the check.
+  Binary `Ref` numbers are excluded because the referenced bytes live in the inner header.
+- Outer/inner header fields the candidate would not write (unknown IDs and `Comment`)
+  are recorded by a local patch and also make the database read-only.
+- Unknown outer header fields and KDF parameters are still rejected by preflight.
+- `saveDatabase` throws `READ_ONLY` for such databases; reading remains possible.
+
+A false positive only costs writability, never data. Real KeePass/KeePassXC fixtures
+must confirm the check does not flag ordinary files.
+
+## Local candidate patch
+
+`patches/@keenext__kdbxweb@2.2.0-keenext.2.patch` is applied by pnpm
+(`patchedDependencies` in `pnpm-workspace.yaml`). It must be reviewed whenever the
+candidate is upgraded and proposed upstream:
+
+- `KdbxHeader.droppedFieldIds` records unknown and `Comment` header fields.
+
 ## Gate blockers
 
-| Requirement              | Evidence / remaining work                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| KeePass interoperability | No KeePass or KeePassXC executable was present locally. No independently generated fixtures have been imported, and no cross-application round trip has been run. Library self-round-trips are not independent interoperability evidence.                                                                                                                        |
-| Bounded decoded loading  | Both inspected JS candidates call synchronous `gunzipSync` without an output ceiling, then build an XML DOM without complexity ceilings. Post-load size checks and worker old-generation limits would not fix this. A bounded library path or another verified adapter is required.                                                                              |
-| Unknown-data policy      | A synthetic unknown metadata element is dropped on save. `preserveXml` is not a safe blanket preservation policy because serialization rebuilds modeled data. A future writable adapter must reject unmodeled XML/inner-header/header/KDF data before mutation, or prove lossless preservation. There is deliberately no public real-database open/save API yet. |
-| Protected empty values   | An empty protected custom string reloads as an unprotected empty string. This is a characterized protection-flag fidelity defect; it is not hidden by the nonempty fixture matrix.                                                                                                                                                                               |
-| Argon2 versions          | `hash-wasm` implements Argon2 1.3 only. The adapter explicitly rejects 1.0 rather than hashing with the wrong version. Compatibility policy/provider selection remains unresolved for existing 1.0 files.                                                                                                                                                        |
-| Resource limits          | Only encrypted/header/KDF admission ceilings are implemented. Decoded bytes, XML nodes/depth, aggregate attachments and history need enforceable pre-allocation bounds, not silent truncation.                                                                                                                                                                   |
-| Defaults/performance     | Synthetic fixtures use low work factors. New-database memory floor, one-second calibration, reference-machine approval and responsive/cancellable production workflows remain unverified.                                                                                                                                                                        |
-| Platform/packaging       | Workers use Node ESM and embedded WASM without native addons, but VS Code-host and packaged Windows/macOS/Linux checks remain unrun. The extension's minimum VS Code version is not selected.                                                                                                                                                                    |
+| Requirement              | Evidence / remaining work                                                                                                                                                                                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| KeePass interoperability | No KeePass or KeePassXC executable was present locally. No independently generated fixtures have been imported, and no cross-application round trip has been run. Library self-round-trips are not independent interoperability evidence.                                           |
+| Bounded decoded loading  | Both inspected JS candidates call synchronous `gunzipSync` without an output ceiling, then build an XML DOM without complexity ceilings. Post-load size checks and worker old-generation limits would not fix this. A bounded library path or another verified adapter is required. |
+| Unknown-data policy      | **Resolved** by refusing writes; see [Unknown-data policy](#unknown-data-policy). There is still deliberately no public real-database open/save API.                                                                                                                                |
+| Protected empty values   | An empty protected custom string reloads as an unprotected empty string. This is a characterized protection-flag fidelity defect; it is not hidden by the nonempty fixture matrix.                                                                                                  |
+| Argon2 versions          | `hash-wasm` implements Argon2 1.3 only. The adapter explicitly rejects 1.0 rather than hashing with the wrong version. Compatibility policy/provider selection remains unresolved for existing 1.0 files.                                                                           |
+| Resource limits          | Only encrypted/header/KDF admission ceilings are implemented. Decoded bytes, XML nodes/depth, aggregate attachments and history need enforceable pre-allocation bounds, not silent truncation.                                                                                      |
+| Defaults/performance     | Synthetic fixtures use low work factors. New-database memory floor, one-second calibration, reference-machine approval and responsive/cancellable production workflows remain unverified.                                                                                           |
+| Platform/packaging       | Node/CI behaviour is verified on Windows/macOS/Linux (see above). Workers use Node ESM and embedded WASM without native addons, but VS Code-host and packaged VSIX checks remain unrun. The extension's minimum VS Code version is not selected.                                    |
 
 Passing characterization tests means the limitation is reproducible, **not**
 that a blocker has been waived. `pnpm compatibility -- --require-gate` deliberately

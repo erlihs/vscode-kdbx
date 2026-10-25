@@ -27,8 +27,8 @@ pnpm compatibility
 - `pnpm compatibility -- --require-gate`: same probe, but exit unsuccessfully
   while release-gate blockers remain.
 
-CI is configured to run on Windows, macOS and Linux with Node 22 and 24.
-That configuration is not evidence that the remote CI runs have passed.
+CI runs on Windows, macOS and Linux with Node 22 and 24 and has passed on all six.
+Line endings are pinned to LF by `.gitattributes`.
 Vite is supplied transitively by Vitest; a dedicated webview build will be
 introduced with the editor rather than adding an unused frontend now.
 
@@ -44,14 +44,18 @@ introduced with the editor rather than adding an unused frontend now.
 - Preservation checks for protected fields, history, binary/empty attachments,
   UUIDs, tags, timestamps, recycle-bin references, deletion records and custom
   metadata, plus tampering, cancellation and exact header/KDF limit boundaries.
+- A worker-internal load/save adapter that opens databases read-only when saving
+  would drop unmodeled XML or header data, plus a reviewed local patch of the
+  candidate (`patches/`).
 
 ## Gate status: blocked
 
-Tests characterize rather than conceal candidate limitations: unknown XML is
-lost, empty protected fields lose their protection flag, decoded loading is not
-bounded, and the chosen Argon2 provider does not implement version 1.0.
-Independent KeePass-generated fixtures and cross-application verification are
-still required. See [the compatibility assessment](docs/compatibility.md).
+Tests characterize rather than conceal candidate limitations: empty protected
+fields lose their protection flag, decoded loading is not bounded, and the chosen
+Argon2 provider does not implement version 1.0. Independent KeePass-generated
+fixtures and cross-application verification are still required. Databases with
+data the candidate cannot save (unknown XML or header fields) open read-only.
+See [the compatibility assessment](docs/compatibility.md).
 
 The VS Code editor, user-facing database operations, persistence/recovery and
 Marketplace packaging have **not** been implemented. The specification forbids

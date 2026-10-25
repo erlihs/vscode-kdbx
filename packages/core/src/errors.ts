@@ -5,6 +5,7 @@ export type ErrorCode =
   | "AUTHENTICATION_OR_INTEGRITY"
   | "CANCELLED"
   | "COMPATIBILITY"
+  | "READ_ONLY"
   | "WORKER";
 
 export class DatabaseError extends Error {

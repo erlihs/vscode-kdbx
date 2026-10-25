@@ -17,7 +17,7 @@ for (const cipher of ["aes256", "chacha20"]) {
         version: report.header.version,
         preserved: report.preserved,
         randomness: report.freshRandomness,
-        unknownXml: report.unknownXmlPreserved,
+        unknownRefused: report.unknownDataRefused,
         bytes: report.encryptedBytes,
         ms: report.elapsedMs,
       });
@@ -26,7 +26,7 @@ for (const cipher of ["aes256", "chacha20"]) {
 }
 console.table(rows);
 console.log(
-  "GATE NOT PASSED: unknown XML loss, unbounded decoded loading, independent KeePass fixtures, " +
-    "Argon2 1.0, and cross-platform verification remain unresolved. See docs/compatibility.md.",
+  "GATE NOT PASSED: empty protected values, unbounded decoded loading, independent KeePass " +
+    "fixtures and Argon2 1.0 remain unresolved. See docs/compatibility.md.",
 );
 if (process.argv.includes("--require-gate")) process.exitCode = 1;
