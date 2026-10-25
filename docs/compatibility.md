@@ -489,6 +489,16 @@ Local Windows verification: `pnpm check` passes **249 tests**, with one POSIX-on
 test skipped, and `pnpm package` rebuilds the VSIX successfully. Hosted CI must
 be rerun; these local results do not establish a passing hosted run.
 
+## macOS minimum-version smoke timeout
+
+The macOS ARM64 / VS Code 1.101.0 smoke run reported a three-minute trusted-window
+timeout without identifying the blocked operation. This is unresolved, not a
+passing gate. The harness now logs and bounds activation, editor commands,
+worker requests and the compatibility probe; failed CI runs retain VS Code logs
+as artifacts before deleting their temporary synthetic profiles. The updated
+harness passes locally on Windows / VS Code 1.101.0 in both trust modes, but a
+macOS rerun is required to identify or reproduce the stall.
+
 ## References
 
 - [Product specification](../spec.md)

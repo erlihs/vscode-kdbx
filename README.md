@@ -50,6 +50,28 @@ Vite is supplied transitively by Vitest. The dependency-free webview is bundled
 with the extension's existing esbuild pipeline; no additional frontend framework
 or build tool is needed.
 
+## Local testing
+
+From the repository root, run `pnpm check` for type/lint/format checks and tests.
+Run `pnpm compatibility` for the synthetic format matrix.
+
+To exercise the installed package in an isolated VS Code profile on Windows:
+
+```powershell
+$env:VSCODE_VERSION = "1.101.0" # Or "stable"
+pnpm smoke
+```
+
+This packages the extension, downloads the requested VS Code version and runs
+trusted and Restricted Mode smoke tests. It does not install into your normal
+profile. The smoke prints each operation as it starts and passes, with deadlines
+that name a stalled operation. CI uploads VS Code logs for failed smoke runs.
+These tests use synthetic data; they do not automate every interactive UI action.
+
+For hands-on testing, run `pnpm package`, install the resulting VSIX using
+**Extensions: Install from VSIX**, then follow the interactive-preview steps below.
+Use synthetic databases only. A Windows pass does not establish a macOS/Linux pass.
+
 ## Current implementation
 
 - A writable binary custom editor associated with `.kdbx` files, native

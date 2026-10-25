@@ -2,7 +2,16 @@
 // the locked editor and compatibility self-test in its extension host (synthetic data only).
 //   VSCODE_VERSION=<x.y.z|stable> pnpm smoke
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,9 +90,18 @@ try {
         },
       },
     );
-    if (run.error) throw run.error;
-    if (run.status !== 0)
+    if (run.error || run.status !== 0) {
+      const diagnostics = process.env.KDBX_SMOKE_DIAGNOSTICS;
+      const logs = join(userDataDir, "logs");
+      if (diagnostics && existsSync(logs)) {
+        const destination = join(diagnostics, mode);
+        mkdirSync(destination, { recursive: true });
+        cpSync(logs, join(destination, "logs"), { recursive: true });
+        console.error(`Synthetic smoke VS Code logs saved to ${destination}`);
+      }
+      if (run.error) throw run.error;
       throw new Error(`${mode} VS Code smoke exited ${run.status ?? run.signal}.`);
+    }
 
     const report = JSON.parse(readFileSync(reportPath, "utf8"));
     console.log(

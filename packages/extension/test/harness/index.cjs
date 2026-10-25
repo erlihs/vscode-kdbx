@@ -8,6 +8,23 @@ const vscode = require("vscode");
 
 exports.activate = () => {};
 
+async function step(label, operation, timeout = 30_000) {
+  console.log(`[kdbx smoke] Starting: ${label}`);
+  let timer;
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Smoke step timed out: ${label}`)), timeout);
+      }),
+    ]);
+    console.log(`[kdbx smoke] Passed: ${label}`);
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function withSessionWorker(extension, run) {
   const session = randomUUID();
   const worker = new Worker(join(extension.extensionPath, "dist", "session-worker.js"), {
@@ -32,14 +49,16 @@ async function withSessionWorker(extension, run) {
     else reject(new Error(`Session worker failed: ${reply.code}`));
   });
   const request = (command) =>
-    Promise.race([
-      new Promise((resolve, reject) => {
-        const id = ++sequence;
-        pending = { id, kind: command.kind, resolve, reject };
-        worker.postMessage({ id, session, command });
-      }),
-      failure,
-    ]);
+    step(`session worker ${command.kind}`, () =>
+      Promise.race([
+        new Promise((resolve, reject) => {
+          const id = ++sequence;
+          pending = { id, kind: command.kind, resolve, reject };
+          worker.postMessage({ id, session, command });
+        }),
+        failure,
+      ]),
+    );
   try {
     return await run(request);
   } finally {
@@ -106,7 +125,7 @@ async function checkEditor(extension) {
   if (extension.extensionKind !== vscode.ExtensionKind.UI) {
     throw new Error("The database editor did not run in the local UI extension host.");
   }
-  await extension.activate();
+  await step("activate installed extension", () => extension.activate());
   const commands = await vscode.commands.getCommands(true);
   for (const command of ["kdbx.createDatabase", "kdbx.lockDatabase", "kdbx.lockAllDatabases"]) {
     if (!commands.includes(command))
@@ -115,7 +134,8 @@ async function checkEditor(extension) {
   if (readFileSync(join(extension.extensionPath, "dist", "webview.js")).length < 1000) {
     throw new Error("The installed VSIX is missing the interactive webview bundle.");
   }
-  await vscode.commands.executeCommand("kdbx.lockAllDatabases");
+  const command = (id, ...args) => step(id, () => vscode.commands.executeCommand(id, ...args));
+  await command("kdbx.lockAllDatabases");
   const uri = vscode.Uri.file(process.env.KDBX_EDITOR_FIXTURE);
   const tabs = () => vscode.window.tabGroups.all.flatMap((group) => [...group.tabs]);
   const customTabs = () =>
@@ -133,21 +153,21 @@ async function checkEditor(extension) {
     }
   };
 
-  await vscode.commands.executeCommand("vscode.open", uri, { preview: false });
+  await command("vscode.open", uri, { preview: false });
   await waitFor(
     () => customTabs().length === 1,
     "Default .kdbx association did not open the custom editor.",
   );
-  await vscode.commands.executeCommand("vscode.openWith", uri, "kdbx.database", {
+  await command("vscode.openWith", uri, "kdbx.database", {
     viewColumn: vscode.ViewColumn.Beside,
     preview: false,
   });
   await waitFor(() => customTabs().length === 2, "A second custom-editor view did not open.");
   if (customTabs().some((tab) => tab.isDirty)) throw new Error("The locked editor became dirty.");
-  await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+  await command("workbench.action.closeAllEditors");
   await waitFor(() => customTabs().length === 0, "Locked editors did not close.");
 
-  await vscode.commands.executeCommand("vscode.openWith", uri, "default");
+  await step("default-editor escape hatch", () => command("vscode.openWith", uri, "default"));
   await waitFor(
     () =>
       tabs().some(
@@ -156,10 +176,10 @@ async function checkEditor(extension) {
       ),
     "The Reopen Editor With default-editor escape hatch failed.",
   );
-  await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-  await vscode.commands.executeCommand("vscode.open", uri);
+  await command("workbench.action.closeAllEditors");
+  await command("vscode.open", uri);
   await waitFor(() => customTabs().length === 1, "The database custom editor did not reopen.");
-  await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+  await command("workbench.action.closeAllEditors");
   return {
     ok: true,
     trusted,
@@ -180,11 +200,20 @@ exports.run = async () => {
   }
   // Let VS Code finish starting up so its own work does not count as ours.
   await new Promise((resolve) => setTimeout(resolve, 5_000));
-  const editor = await checkEditor(extension);
-  const sessionWorker = await checkSessionWorker(extension);
-  const report = await vscode.commands.executeCommand("kdbx.compatibilitySelfTest", {
-    quiet: true,
-  });
+  const editor = await step("editor lifecycle", () => checkEditor(extension), 90_000);
+  const sessionWorker = await step(
+    "packaged session round trip",
+    () => checkSessionWorker(extension),
+    60_000,
+  );
+  const report = await step(
+    "compatibility self-test",
+    () =>
+      vscode.commands.executeCommand("kdbx.compatibilitySelfTest", {
+        quiet: true,
+      }),
+    60_000,
+  );
   writeFileSync(
     process.env.KDBX_REPORT,
     JSON.stringify(

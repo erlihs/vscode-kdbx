@@ -32,6 +32,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       VSCODE_VERSION: ${{ matrix.vscode }}
+      KDBX_SMOKE_DIAGNOSTICS: ${{ runner.temp }}/kdbx-smoke-diagnostics
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -45,6 +46,13 @@ jobs:
         run: xvfb-run -a pnpm --filter kdbx smoke
       - if: runner.os != 'Linux'
         run: pnpm --filter kdbx smoke
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-logs-${{ matrix.os }}-${{ matrix.vscode }}
+          path: ${{ env.KDBX_SMOKE_DIAGNOSTICS }}
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest' && matrix.vscode == 'stable'
         with:
