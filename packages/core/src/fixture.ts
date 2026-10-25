@@ -51,6 +51,7 @@ export async function createFixture(options: FixtureOptions): Promise<Kdbx> {
   entry.fields.set("Notes", "Plain text only\n<script>synthetic</script>");
   entry.fields.set("custom", "custom value");
   entry.fields.set("protected-custom", ProtectedValue.fromString("synthetic protected value"));
+  entry.fields.set("empty-protected", ProtectedValue.fromString(""));
   entry.times.creationTime = FIXTURE_DATE;
   entry.times.lastModTime = FIXTURE_DATE;
   entry.tags = ["one", "two"];

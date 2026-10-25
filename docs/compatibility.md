@@ -65,7 +65,8 @@ Separate tests cover:
   truncated streams and independent freshness of the serialized master seed,
   encryption IV and KDF salt for all six cipher/KDF combinations.
 - Zero-byte and non-text attachments, duplicate binary content, untrusted
-  path-shaped names treated only as labels, history and nonempty protection flags.
+  path-shaped names treated only as labels, history and both empty and nonempty
+  protection flags (the shared fixture includes an empty protected field).
 - Unknown cipher/header fields, KDBX 3.x/4.0/future versions, malformed/truncated
   headers, bad public checksums and enormous declared header fields.
 - Exact admission boundaries and immediately-above rejection for encrypted
@@ -104,6 +105,9 @@ must confirm the check does not flag ordinary files.
 candidate is upgraded and proposed upstream:
 
 - `KdbxHeader.droppedFieldIds` records unknown and `Comment` header fields.
+- Empty protected values (`Protected="True"` with no text) load as empty
+  `ProtectedValue`s instead of unprotected strings, so the flag survives a save.
+  KeePass reads them the same way; the inner random stream advances by zero bytes.
 
 ## Gate blockers
 
@@ -112,7 +116,7 @@ candidate is upgraded and proposed upstream:
 | KeePass interoperability | No KeePass or KeePassXC executable was present locally. No independently generated fixtures have been imported, and no cross-application round trip has been run. Library self-round-trips are not independent interoperability evidence.                                                                                                                                                                                                                                                         |
 | Bounded decoded loading  | Both inspected JS candidates call synchronous `gunzipSync` without an output ceiling, then build an XML DOM without complexity ceilings. Post-load size checks and worker old-generation limits would not fix this. A bounded library path or another verified adapter is required.                                                                                                                                                                                                               |
 | Unknown-data policy      | **Resolved** by refusing writes; see [Unknown-data policy](#unknown-data-policy). There is still deliberately no public real-database open/save API.                                                                                                                                                                                                                                                                                                                                              |
-| Protected empty values   | An empty protected custom string reloads as an unprotected empty string. This is a characterized protection-flag fidelity defect; it is not hidden by the nonempty fixture matrix.                                                                                                                                                                                                                                                                                                                |
+| Protected empty values   | **Resolved** by the [local candidate patch](#local-candidate-patch); every matrix case round-trips an empty protected field.                                                                                                                                                                                                                                                                                                                                                                      |
 | Argon2 versions          | **Resolved by policy.** KeePass always writes Argon2 1.3 and KeePassXC defaults to it ([source](https://github.com/keepassxreboot/keepassxc/blob/develop/src/crypto/kdf/Argon2Kdf.cpp)); neither UI exposes the version, so 1.0 files come only from third-party tools. Version 1.0 is refused as `UNSUPPORTED` during preflight, before any key derivation, and the provider adapter independently refuses to derive with the wrong version. `hash-wasm` (1.3 only) is accepted as the provider. |
 | Resource limits          | Only encrypted/header/KDF admission ceilings are implemented. Decoded bytes, XML nodes/depth, aggregate attachments and history need enforceable pre-allocation bounds, not silent truncation.                                                                                                                                                                                                                                                                                                    |
 | Defaults/performance     | Synthetic fixtures use low work factors. New-database memory floor, one-second calibration, reference-machine approval and responsive/cancellable production workflows remain unverified.                                                                                                                                                                                                                                                                                                         |

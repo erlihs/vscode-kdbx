@@ -26,7 +26,7 @@ for (const cipher of ["aes256", "chacha20"]) {
 }
 console.table(rows);
 console.log(
-  "GATE NOT PASSED: empty protected values, unbounded decoded loading and independent " +
-    "KeePass fixtures remain unresolved. See docs/compatibility.md.",
+  "GATE NOT PASSED: unbounded decoded loading and independent KeePass fixtures remain " +
+    "unresolved. See docs/compatibility.md.",
 );
 if (process.argv.includes("--require-gate")) process.exitCode = 1;

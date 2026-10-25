@@ -81,14 +81,19 @@ describe("candidate preservation and known limitations", () => {
     expect(entry.qualityCheck).toBe(false);
   });
 
-  it("characterizes empty protected values losing their protection flag", async () => {
+  it("preserves the protection flag of empty protected values", async () => {
     const db = await fixture("aes256", "argon2id");
     const entry = db.getDefaultGroup().groups.find((group) => group.entries.length)!.entries[0]!;
     entry.fields.set("empty-protected", ProtectedValue.fromString(""));
     const loaded = await Kdbx.load(await db.save(), credentials(SYNTHETIC_PASSWORD));
     const reopened = loaded.getDefaultGroup().groups.find((group) => group.entries.length)!
       .entries[0]!;
-    expect(reopened.fields.get("empty-protected")).toBe("");
+    const value = reopened.fields.get("empty-protected");
+    expect(value).toBeInstanceOf(ProtectedValue);
+    expect((value as ProtectedValue).getText()).toBe("");
+    expect((reopened.fields.get("Password") as ProtectedValue).getText()).toBe(
+      "synthetic-new-secret",
+    );
   });
 
   it("rejects unsupported Argon2 versions rather than silently substituting", async () => {

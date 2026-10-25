@@ -1,8 +1,21 @@
 diff --git a/dist/index.js b/dist/index.js
-index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..80784d54d012349ffd07f0bc3bb15a1a6e041d49 100644
+index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..54a5844b2d8e247154cd297a8c899cc594c1105a 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -4417,6 +4417,9 @@ var KdbxHeader = class _KdbxHeader {
+@@ -2173,10 +2173,8 @@ function setProtectedValues(node, protectSaltGenerator) {
+     if (strToBoolean(node2.getAttribute(Attr.Protected))) {
+       try {
+         const value = arrayToBuffer(base64ToBytes(node2.textContent || ""));
+-        if (value.byteLength) {
+-          const salt = protectSaltGenerator.getSalt(value.byteLength);
+-          protectedValues.set(node2, new ProtectedValue(value, salt));
+-        }
++        const salt = protectSaltGenerator.getSalt(value.byteLength);
++        protectedValues.set(node2, new ProtectedValue(value, salt));
+       } catch (e) {
+         const line = node2.lineNumber;
+         const at = line === void 0 ? "" : ` at line ${line}`;
+@@ -4417,6 +4415,9 @@ var KdbxHeader = class _KdbxHeader {
      const size = this.readFieldSize(stm);
      const bytes = size > 0 ? stm.readBytes(size) : new ArrayBuffer(0);
      const headerField = fields[headerId];
