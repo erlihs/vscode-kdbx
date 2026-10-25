@@ -51,11 +51,11 @@ introduced with the editor rather than adding an unused frontend now.
 ## Gate status: blocked
 
 Tests characterize rather than conceal candidate limitations: empty protected
-fields lose their protection flag, decoded loading is not bounded, and the chosen
-Argon2 provider does not implement version 1.0. Independent KeePass-generated
-fixtures and cross-application verification are still required. Databases with
-data the candidate cannot save (unknown XML or header fields) open read-only.
-See [the compatibility assessment](docs/compatibility.md).
+fields lose their protection flag and decoded loading is not bounded.
+Independent KeePass-generated fixtures and cross-application verification are
+still required. Databases with data the candidate cannot save (unknown XML or
+header fields) open read-only, and Argon2 1.0 files (never written by KeePass or
+KeePassXC) are refused. See [the compatibility assessment](docs/compatibility.md).
 
 The VS Code editor, user-facing database operations, persistence/recovery and
 Marketplace packaging have **not** been implemented. The specification forbids

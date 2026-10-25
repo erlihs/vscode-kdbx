@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
-import { BinaryStream, Kdbx, KdbxContext } from "@keenext/kdbxweb";
+import { BinaryStream, Kdbx, KdbxContext, VarDictionary } from "@keenext/kdbxweb";
 import { loadDatabase, saveDatabase } from "../dist/adapter.js";
 import { credentials } from "../dist/candidate.js";
 import { createFixture, SYNTHETIC_PASSWORD } from "../dist/fixture.js";
@@ -80,6 +81,22 @@ describe("unknown-data policy: preserve exactly or refuse writing", () => {
       "The file contains header fields this version cannot save.",
     ]);
     await expect(saveDatabase(loaded)).rejects.toMatchObject({ code: "READ_ONLY" });
+  });
+
+  it("refuses Argon2 1.0 during preflight, before any key derivation", async () => {
+    const db = await fixture();
+    db.header.kdfParameters!.set("V", VarDictionary.ValueType.UInt32, 0x10);
+    db.header.generateSalts();
+    const stream = new BinaryStream();
+    db.header.write(stream);
+    const header = new Uint8Array(stream.getWrittenBytes());
+    const bytes = new Uint8Array(header.byteLength + 64);
+    bytes.set(header);
+    bytes.set(createHash("sha256").update(header).digest(), header.byteLength);
+    await expect(loadDatabase(bytes, password())).rejects.toMatchObject({
+      code: "UNSUPPORTED",
+      message: "Only Argon2 version 1.3 is supported by the selected provider.",
+    });
   });
 
   it("maps wrong credentials without exposing library errors", async () => {
