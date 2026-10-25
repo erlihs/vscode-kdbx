@@ -7,38 +7,41 @@ const matrix = (["aes256", "chacha20"] as const).flatMap((cipher) =>
   ),
 );
 
-describe("synthetic candidate compatibility (not independent KeePass interoperability)", () => {
-  it.each(matrix)("$cipher / $kdf / $compression", async (options) => {
-    const result = await runCompatibilityProbe(options);
-    expect(result.header).toMatchObject({ ...options, version: "4.1" });
-    expect(result.preserved).toBe(true);
-    expect(result.freshRandomness).toBe(true);
-    expect(result.encryptedBytes).toBeGreaterThan(0);
-    expect(result.unknownDataRefused).toBe(true);
-  });
-
-  it("cancels before starting a worker", async () => {
-    await expect(
-      runCompatibilityProbe(matrix[0]!, { signal: AbortSignal.abort() }),
-    ).rejects.toMatchObject({ code: "CANCELLED" });
-  });
-
-  it("terminates an in-flight worker on cancellation", async () => {
-    const controller = new AbortController();
-    const result = runCompatibilityProbe(matrix[0]!, { signal: controller.signal });
-    controller.abort();
-    await expect(result).rejects.toMatchObject({ code: "CANCELLED" });
-  });
-
-  it("terminates a worker that exceeds its deadline", async () => {
-    await expect(runCompatibilityProbe(matrix[0]!, { timeoutMs: 1 })).rejects.toMatchObject({
-      code: "RESOURCE_LIMIT",
+describe.each(["4.0", "4.1"] as const)(
+  "KDBX %s synthetic candidate compatibility (not independent KeePass interoperability)",
+  (version) => {
+    it.each(matrix)("$cipher / $kdf / $compression", async (options) => {
+      const result = await runCompatibilityProbe({ ...options, version });
+      expect(result.header).toMatchObject({ ...options, version });
+      expect(result.preserved).toBe(true);
+      expect(result.freshRandomness).toBe(true);
+      expect(result.encryptedBytes).toBeGreaterThan(0);
+      expect(result.unknownDataRefused).toBe(true);
     });
-  });
 
-  it.each([0, -1, Infinity, 1.5, 120001])("rejects invalid timeout %s", async (timeoutMs) => {
-    await expect(runCompatibilityProbe(matrix[0]!, { timeoutMs })).rejects.toMatchObject({
-      code: "RESOURCE_LIMIT",
+    it("cancels before starting a worker", async () => {
+      await expect(
+        runCompatibilityProbe(matrix[0]!, { signal: AbortSignal.abort() }),
+      ).rejects.toMatchObject({ code: "CANCELLED" });
     });
-  });
-});
+
+    it("terminates an in-flight worker on cancellation", async () => {
+      const controller = new AbortController();
+      const result = runCompatibilityProbe(matrix[0]!, { signal: controller.signal });
+      controller.abort();
+      await expect(result).rejects.toMatchObject({ code: "CANCELLED" });
+    });
+
+    it("terminates a worker that exceeds its deadline", async () => {
+      await expect(runCompatibilityProbe(matrix[0]!, { timeoutMs: 1 })).rejects.toMatchObject({
+        code: "RESOURCE_LIMIT",
+      });
+    });
+
+    it.each([0, -1, Infinity, 1.5, 120001])("rejects invalid timeout %s", async (timeoutMs) => {
+      await expect(runCompatibilityProbe(matrix[0]!, { timeoutMs })).rejects.toMatchObject({
+        code: "RESOURCE_LIMIT",
+      });
+    });
+  },
+);

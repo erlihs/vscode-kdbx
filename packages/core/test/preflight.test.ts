@@ -46,13 +46,27 @@ describe("bounded, unauthenticated header inspection", () => {
     });
   });
 
+  it("identifies explicit 4.0 and settings", async () => {
+    const db = await createFixture({
+      version: "4.0",
+      cipher: "aes256",
+      kdf: "argon2id",
+      compression: "gzip",
+    });
+    expect(inspectHeader(new Uint8Array(await db.save()))).toMatchObject({
+      version: "4.0",
+      cipher: "aes256",
+      kdf: "argon2id",
+      compression: "gzip",
+    });
+  });
+
   it.each([0, 7, 11, 12, 15, 80, 200])("rejects truncation at %s bytes", (length) => {
     expectCode(fixture.slice(0, length), "FORMAT");
   });
 
   it.each([
     [3, 1],
-    [4, 0],
     [4, 2],
     [5, 0],
   ])("rejects KDBX %s.%s", (major, minor) => {

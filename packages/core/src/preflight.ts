@@ -31,7 +31,7 @@ export type Cipher = "aes256" | "chacha20";
 export type Kdf = "argon2id" | "argon2d" | "aes";
 
 export interface HeaderInfo {
-  version: "4.1";
+  version: "4.0" | "4.1";
   cipher: Cipher;
   kdf: Kdf;
   compression: "none" | "gzip";
@@ -73,8 +73,9 @@ export function inspectHeader(bytes: Uint8Array): HeaderInfo {
   if (view.getUint32(0, true) !== 0x9aa2d903 || view.getUint32(4, true) !== 0xb54bfb67) {
     throw new DatabaseError("FORMAT", "Not a KeePass KDBX database.");
   }
-  if (view.getUint16(8, true) !== 1 || view.getUint16(10, true) !== 4) {
-    unsupported("Only KDBX 4.1 is supported; convert a separate copy in KeePass.");
+  const minor = view.getUint16(8, true);
+  if ((minor !== 0 && minor !== 1) || view.getUint16(10, true) !== 4) {
+    unsupported("Only KDBX 4.0 and 4.1 are supported; convert a separate copy in KeePass.");
   }
 
   let offset = 12;
@@ -159,7 +160,7 @@ export function inspectHeader(bytes: Uint8Array): HeaderInfo {
         ? "gzip"
         : unsupported("Unsupported KDBX compression.");
   const result: HeaderInfo = {
-    version: "4.1",
+    version: minor === 0 ? "4.0" : "4.1",
     cipher,
     kdf,
     compression,

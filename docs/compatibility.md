@@ -51,7 +51,7 @@ worker, DOM and embedded WASM assets; future packaging changes must preserve the
 
 For **each** of the twelve cipher/KDF/compression combinations:
 
-1. Create a database, explicitly set version 4.1, and assert the on-disk header.
+1. Create databases explicitly in versions 4.0 and 4.1, and assert the on-disk header.
 2. Load it through the worker-internal adapter, confirm it is writable and compare
    a semantic synthetic snapshot.
 3. Edit a protected password, push history, save and reopen; compare again.
@@ -74,7 +74,7 @@ Separate tests cover:
 - Zero-byte and non-text attachments, duplicate binary content, untrusted
   path-shaped names treated only as labels, history and both empty and nonempty
   protection flags (the shared fixture includes an empty protected field).
-- Unknown cipher/header fields, KDBX 3.x/4.0/future versions, malformed/truncated
+- Unknown cipher/header fields, KDBX 3.x/future versions, malformed/truncated
   headers, bad public checksums and enormous declared header fields.
 - Exact admission boundaries and immediately-above rejection for encrypted
   input size, header size, Argon2 memory/iterations/parallelism and AES rounds,
@@ -201,8 +201,12 @@ Findings that shaped the adapter:
 - The candidate dropped empty attachments from XML binary pools (as KeePass exports
   them); fixed in the local patch.
 - KeePass and KeePassXC write KDBX 4.0 (KeePassXC's CLI even 3.1) unless 4.1 features
-  are used. The specification's 4.1-only scope therefore refuses many real databases;
-  whether to read/write 4.0 is an open product question, not a gate blocker.
+  are used. Both 4.0 and 4.1 are now admitted; 3.x remains unsupported. Ordinary edits
+  preserve 4.0 and its KDF settings. Edits requiring 4.1 metadata, including moves,
+  automatically upgrade to 4.1, matching KeePassXC. Worker workflow tests cover both
+  version preservation and required upgrades. New databases still use 4.1.
+  The independent application-written fixtures below remain 4.1 evidence;
+  the additional 4.0 matrix is synthetic, not independent interoperability evidence.
 
 ## Gate blockers
 

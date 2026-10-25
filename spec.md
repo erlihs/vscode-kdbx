@@ -19,7 +19,7 @@ There is no routine "decrypt file to disk" action. Plaintext database export is 
 
 ### First-release goals
 
-1. Create, open, modify, and save KDBX 4.1 databases compatible with KeePass.
+1. Create KDBX 4.1 databases and open, modify, and save KDBX 4.0/4.1 databases compatible with KeePass.
 2. Provide a usable custom editor when a user opens a `.kdbx` file from Explorer.
 3. Support master-password authentication, explicit locking, and automatic locking.
 4. Manage groups, password entries, small notes, custom fields, and binary attachments.
@@ -71,7 +71,7 @@ Do not promise to distinguish an incorrect password from all forms of authentica
 - Register a custom editor for `*.kdbx`, while retaining VS Code's "Reopen Editor With" escape hatch.
 - Validate the signature, version, supported algorithms, and input/resource limits before expensive processing where possible.
 - Create new databases explicitly as KDBX 4.1, with AES-256 and Argon2id as the proposed defaults.
-- Support reading and writing KDBX 4.1 using AES-256 or ChaCha20 and Argon2id, Argon2d, or AES-KDF, subject to the compatibility gate in section 5.
+- Support reading and writing KDBX 4.0 and 4.1 using AES-256 or ChaCha20 and Argon2id, Argon2d, or AES-KDF, subject to the compatibility gate in section 5. Preserve 4.0 on ordinary saves; automatically upgrade to 4.1 when edits require newer metadata, matching KeePassXC.
 - Preserve existing cipher, KDF parameters, compression, and supported metadata when saving. Never silently weaken security settings or downgrade the file format.
 - Reject other format versions in the first release with a clear message; do not silently convert them.
 - Change the master password with confirmation, saving the result through the same safe-write path.

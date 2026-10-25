@@ -33,6 +33,7 @@ export async function runCompatibilityProbe(
     throw new DatabaseError("RESOURCE_LIMIT", "Probe timeout must be 1 to 120000 milliseconds.");
   }
   if (
+    (fixture.version !== undefined && !["4.0", "4.1"].includes(fixture.version)) ||
     !["aes256", "chacha20"].includes(fixture.cipher) ||
     !["aes", "argon2d", "argon2id"].includes(fixture.kdf) ||
     !["none", "gzip"].includes(fixture.compression)

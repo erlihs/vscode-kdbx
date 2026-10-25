@@ -56,6 +56,54 @@ afterEach(async () => {
 });
 
 describe("UI worker workflows", () => {
+  it("unlocks, edits and saves KDBX 4.0 without changing its version or KDF", async () => {
+    const db = await createFixture({
+      version: "4.0",
+      cipher: "chacha20",
+      kdf: "argon2id",
+      compression: "gzip",
+    });
+    await fs.writeFile(path, new Uint8Array(await db.save()));
+    const before = inspectHeader(await fs.readFile(path));
+    expect(before.version).toBe("4.0");
+    const session = await open();
+    const id = (await session.listEntries())[0]!.id;
+    await session.updateEntry(id, {
+      fields: { Password: { value: "edited 4.0 password", protected: true } },
+    });
+    await session.save();
+    expect(inspectHeader(await fs.readFile(path))).toEqual(before);
+    await session.lock();
+    await session.unlock(SYNTHETIC_PASSWORD);
+    expect(await session.readField(id, "Password")).toBe("edited 4.0 password");
+  });
+
+  it("upgrades KDBX 4.0 to 4.1 when moving an entry requires newer metadata", async () => {
+    const db = await createFixture({
+      version: "4.0",
+      cipher: "aes256",
+      kdf: "aes",
+      compression: "none",
+    });
+    await fs.writeFile(path, new Uint8Array(await db.save()));
+    const before = inspectHeader(await fs.readFile(path));
+    expect(before.version).toBe("4.0");
+    const session = await open();
+    const id = (await session.listEntries())[0]!.id;
+    const destination = (await session.listGroups()).find((group) => group.parentId === null)!.id;
+    await session.updateEntry(id, { groupId: destination });
+    await session.save();
+    expect(inspectHeader(await fs.readFile(path))).toEqual({ ...before, version: "4.1" });
+    await session.lock();
+    await session.unlock(SYNTHETIC_PASSWORD);
+    expect((await session.getEntry(id)).groupId).toBe(destination);
+    expect(
+      [...(await saved()).getDefaultGroup().allEntries()].find(
+        (entry) => entry.uuid.toString() === id,
+      )?.previousParentGroup,
+    ).toBeDefined();
+  });
+
   it("creates a KeePass recycle bin even when disabled, and undo restores the original bin metadata", async () => {
     const db = await saved();
     const bin = db.meta.recycleBinUuid && db.getGroup(db.meta.recycleBinUuid);

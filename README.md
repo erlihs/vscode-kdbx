@@ -96,7 +96,10 @@ Use synthetic databases only. A Windows pass does not establish a macOS/Linux pa
   The extension requests local UI-host placement. Granting workspace trust refreshes
   an open restriction page; it does not unlock anything.
 - pnpm workspace, strict TypeScript, native type checking, Ox tools and CI.
-- Bounded, unauthenticated KDBX 4.1 header inspection, with explicit unsupported
+- KDBX 4.0 and 4.1 opening/editing; ordinary edits preserve the format and KDF.
+  Edits requiring 4.1 metadata (such as moves) upgrade 4.0 files to 4.1, matching
+  KeePassXC. New databases still use 4.1.
+- Bounded, unauthenticated KDBX 4.0/4.1 header inspection, with explicit unsupported
   version/cipher/KDF errors and resource admission ceilings.
 - Evaluation of a maintained KdbxWeb fork with an explicitly supplied XML parser
   and WASM Argon2d/Argon2id implementation.

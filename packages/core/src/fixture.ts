@@ -4,6 +4,7 @@ import type { Argon2Parameters } from "./defaults.js";
 import type { Cipher, Kdf } from "./preflight.js";
 
 export interface FixtureOptions {
+  version?: "4.0" | "4.1";
   cipher: Cipher;
   kdf: Kdf;
   compression: "none" | "gzip";
@@ -36,7 +37,8 @@ export function addSyntheticEntries(db: Kdbx, count: number, offset = 0, noteCha
 export async function createFixture(options: FixtureOptions): Promise<Kdbx> {
   const db = Kdbx.create(credentials(SYNTHETIC_PASSWORD), "Synthetic compatibility fixture");
   db.setVersion(4);
-  db.header.versionMinor = 1;
+  const version = options.version ?? "4.1";
+  db.header.versionMinor = version === "4.0" ? 0 : 1;
   db.header.dataCipherUuid = new KdbxUuid(
     options.cipher === "aes256" ? Consts.CipherId.Aes : Consts.CipherId.ChaCha20,
   );
@@ -61,10 +63,13 @@ export async function createFixture(options: FixtureOptions): Promise<Kdbx> {
     parameters.set("V", VarDictionary.ValueType.UInt32, 0x13);
   }
   const root = db.getDefaultGroup();
-  root.tags = ["group-tag"];
+  if (version === "4.1") root.tags = ["group-tag"];
   const group = db.createGroup(root, "Duplicate title");
   group.customData = new Map([
-    ["plugin-group", { value: "opaque group data", lastModified: FIXTURE_DATE }],
+    [
+      "plugin-group",
+      { value: "opaque group data", ...(version === "4.1" ? { lastModified: FIXTURE_DATE } : {}) },
+    ],
   ]);
   const entry = db.createEntry(group);
   entry.fields.set("Title", "Duplicate title");
@@ -78,10 +83,15 @@ export async function createFixture(options: FixtureOptions): Promise<Kdbx> {
   entry.times.creationTime = FIXTURE_DATE;
   entry.times.lastModTime = FIXTURE_DATE;
   entry.tags = ["one", "two"];
-  entry.qualityCheck = false;
-  entry.previousParentGroup = root.uuid;
+  if (version === "4.1") {
+    entry.qualityCheck = false;
+    entry.previousParentGroup = root.uuid;
+  }
   entry.customData = new Map([
-    ["plugin-entry", { value: "opaque entry data", lastModified: FIXTURE_DATE }],
+    [
+      "plugin-entry",
+      { value: "opaque entry data", ...(version === "4.1" ? { lastModified: FIXTURE_DATE } : {}) },
+    ],
   ]);
   entry.autoType.items = [
     { window: "synthetic window", keystrokeSequence: "{USERNAME}{TAB}{PASSWORD}" },
@@ -100,11 +110,13 @@ export async function createFixture(options: FixtureOptions): Promise<Kdbx> {
   const duplicate = db.createEntry(group);
   duplicate.fields.set("Title", "Duplicate title");
   duplicate.fields.set("Password", ProtectedValue.fromString("synthetic duplicate password"));
-  db.meta.customData.set("plugin-meta", { value: "opaque metadata", lastModified: FIXTURE_DATE });
+  db.meta.customData.set("plugin-meta", {
+    value: "opaque metadata",
+    ...(version === "4.1" ? { lastModified: FIXTURE_DATE } : {}),
+  });
   db.meta.customIcons.set(KdbxUuid.random().toString(), {
     data: new Uint8Array([1, 2, 3]).buffer,
-    name: "synthetic icon",
-    lastModified: FIXTURE_DATE,
+    ...(version === "4.1" ? { name: "synthetic icon", lastModified: FIXTURE_DATE } : {}),
   });
   db.header.publicCustomData = new VarDictionary();
   db.header.publicCustomData.set("synthetic", VarDictionary.ValueType.String, "public metadata");
