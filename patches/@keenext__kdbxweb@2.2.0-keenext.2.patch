@@ -1,7 +1,16 @@
 diff --git a/dist/index.js b/dist/index.js
-index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..54a5844b2d8e247154cd297a8c899cc594c1105a 100644
+index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..e89d5c2bb428c7fb37ef667804f729abf56c8f71 100644
 --- a/dist/index.js
 +++ b/dist/index.js
+@@ -2140,7 +2140,7 @@ function getProtectedBinary(node) {
+     return { ref };
+   }
+   if (!text) {
+-    return void 0;
++    return new ArrayBuffer(0);
+   }
+   const compressed = strToBoolean(node.getAttribute(Attr.Compressed));
+   let bytes = base64ToBytes(text);
 @@ -2173,10 +2173,8 @@ function setProtectedValues(node, protectSaltGenerator) {
      if (strToBoolean(node2.getAttribute(Attr.Protected))) {
        try {

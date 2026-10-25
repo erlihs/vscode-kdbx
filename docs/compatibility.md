@@ -5,7 +5,8 @@
 Phase 1 is **not passed**. This document records implemented evidence and open
 blockers, not a production compatibility promise.
 
-Run `pnpm check`, `pnpm compatibility` and `pnpm audit --prod`.
+Run `pnpm check`, `pnpm compatibility`, `pnpm audit --prod` and, with KeePass or
+KeePassXC available, `pnpm interop -- --app keepass|keepassxc`.
 The probe prints OS, Node version, CPU, output size and elapsed time for each
 synthetic case. It never prints a decrypted snapshot or credentials.
 All fixtures are generated in memory from fixed synthetic values; only UUIDs,
@@ -108,12 +109,58 @@ candidate is upgraded and proposed upstream:
 - Empty protected values (`Protected="True"` with no text) load as empty
   `ProtectedValue`s instead of unprotected strings, so the flag survives a save.
   KeePass reads them the same way; the inner random stream advances by zero bytes.
+- Empty binaries in XML binary pools (`<Binary ID="1" Compressed="True" />`, as
+  KeePass exports them) load as empty attachments instead of being dropped.
+
+## Independent interoperability
+
+`pnpm interop -- --app keepass|keepassxc` (`scripts/interop.mjs`) drives the real
+applications with synthetic data only, for all twelve cipher/KDF/compression cases:
+
+1. The candidate creates the fixture; the application adds an entry, which makes it
+   rewrite the **whole file** with its own header/XML writer while keeping the
+   cipher, KDF and compression.
+2. The adapter must open that file **writable**, with every synthetic value intact
+   (fields and protection flags, attachments, history, tags, custom data, icons,
+   deletion records, recycle bin, public custom data) and the application's entry.
+3. The adapter creates and edits entries and saves. The application must decrypt the
+   result, report the same cipher/KDF (KeePassXC), return the edited protected value,
+   export the exact attachment bytes, and produce an XML export that passes the same
+   checks.
+
+KeePassXC additionally imports the fixture's XML into a KeePassXC-native database.
+
+| Application     | Where                                   | Result                |
+| --------------- | --------------------------------------- | --------------------- |
+| KeePass 2.61.1  | Windows, local and `keepass-interop` CI | 12/12 both directions |
+| KeePassXC 2.8.0 | Windows, local                          | 13/13 both directions |
+| KeePassXC 2.7.6 | Ubuntu `keepassxc-interop` CI           | 13/13 both directions |
+
+The files the applications wrote are committed under `packages/core/test/fixtures/`
+and re-verified by `pnpm test` everywhere, without the applications installed.
+Downloads are pinned by SHA-256 (KeePass: the officially published hash).
+
+Findings that shaped the adapter:
+
+- Equivalent spellings are not data changes: booleans (`False`/`false`, `Null`),
+  tag separators (`;`, `,`) and empty known elements such as `<DefaultSequence/>`.
+  Tags are only split on `;`/`,`; a tag the candidate would re-split (`a:b`) still
+  makes the database read-only. `Meta/Generator` is the writer's own stamp.
+- KeePassXC drops `LastModificationTime` from group custom data and adds its own
+  `_LAST_MODIFIED`/`KPXC_RANDOM_SLUG` items; this is KeePassXC behaviour, not ours.
+- KeePassXC XML exports omit attachment contents, and `attachment-export --stdout`
+  re-encodes binary data on Windows; the harness exports attachments to files.
+- The candidate dropped empty attachments from XML binary pools (as KeePass exports
+  them); fixed in the local patch.
+- KeePass and KeePassXC write KDBX 4.0 (KeePassXC's CLI even 3.1) unless 4.1 features
+  are used. The specification's 4.1-only scope therefore refuses many real databases;
+  whether to read/write 4.0 is an open product question, not a gate blocker.
 
 ## Gate blockers
 
 | Requirement              | Evidence / remaining work                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| KeePass interoperability | No KeePass or KeePassXC executable was present locally. No independently generated fixtures have been imported, and no cross-application round trip has been run. Library self-round-trips are not independent interoperability evidence.                                                                                                                                                                                                                                                         |
+| KeePass interoperability | **Resolved** for the core: KeePass 2.61.1 and KeePassXC 2.7.6/2.8.0 round trips in both directions; see [Independent interoperability](#independent-interoperability). Editing through the extension UI is verified when the UI exists.                                                                                                                                                                                                                                                           |
 | Bounded decoded loading  | Both inspected JS candidates call synchronous `gunzipSync` without an output ceiling, then build an XML DOM without complexity ceilings. Post-load size checks and worker old-generation limits would not fix this. A bounded library path or another verified adapter is required.                                                                                                                                                                                                               |
 | Unknown-data policy      | **Resolved** by refusing writes; see [Unknown-data policy](#unknown-data-policy). There is still deliberately no public real-database open/save API.                                                                                                                                                                                                                                                                                                                                              |
 | Protected empty values   | **Resolved** by the [local candidate patch](#local-candidate-patch); every matrix case round-trips an empty protected field.                                                                                                                                                                                                                                                                                                                                                                      |

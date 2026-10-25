@@ -36,4 +36,33 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends keepassxc
       - run: pnpm install --frozen-lockfile
-      - run: pnpm interop
+      - run: pnpm interop -- --app keepassxc
+  keepass-interop:
+    runs-on: windows-latest
+    env:
+      KEEPASS_URL: https://sourceforge.net/projects/keepass/files/KeePass%202.x/2.61.1/KeePass-2.61.1.zip/download
+      KEEPASS_SHA256: 3952354db9b117e906f7cd4f9f5591065b95186472370da47f46f3e246fea864
+      KPSCRIPT_URL: https://keepass.info/extensions/v2/kpscript/KPScript-2.61.1.zip
+      KPSCRIPT_SHA256: 06c9d95332fe7b2730e4e7fd0aba846c5fa9a1b0cd3119defea9875727a3bffb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install KeePass 2.x with KPScript (pinned hashes)
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP keepass
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          foreach ($name in 'KEEPASS', 'KPSCRIPT') {
+            $zip = Join-Path $dir "$name.zip"
+            curl.exe -fsSL -o $zip ([Environment]::GetEnvironmentVariable("${name}_URL"))
+            $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+            if ($hash -ne [Environment]::GetEnvironmentVariable("${name}_SHA256")) { throw "$name hash mismatch" }
+            Expand-Archive -Force $zip (Join-Path $dir app)
+          }
+          "KPSCRIPT=$(Join-Path $dir app\KPScript.exe)" >> $env:GITHUB_ENV
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm interop -- --app keepass

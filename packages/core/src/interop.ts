@@ -7,10 +7,10 @@ import { FIXTURE_DATE, SYNTHETIC_PASSWORD } from "./fixture.js";
 // application rewrote a fixture; never use it with real databases.
 
 export const INTEROP_ENTRY = Object.freeze({
-  path: "/kpxc-entry",
-  title: "kpxc-entry",
-  userName: "kpxc-user",
-  password: "kpxc-secret",
+  path: "/interop-entry",
+  title: "interop-entry",
+  userName: "interop-user",
+  password: "interop-secret",
 });
 
 export const ADAPTER_EDIT = Object.freeze({
@@ -20,7 +20,7 @@ export const ADAPTER_EDIT = Object.freeze({
   value: "written by adapter",
 });
 
-/** Creates a root entry and, if present, edits the KeePassXC-added entry. */
+/** Creates a root entry and, if present, edits the other application's entry. */
 export function applyAdapterEdit(db: Kdbx): void {
   const created = db.createEntry(db.getDefaultGroup());
   created.fields.set("Title", ADAPTER_EDIT.title);
@@ -50,17 +50,17 @@ export async function exportedXmlProblems(
     );
   if (!edited(ADAPTER_EDIT.title)) problems.push("adapter-created entry is missing");
   if (expected.interopEntry && edited(INTEROP_ENTRY.title)?.history.length !== 1) {
-    problems.push("adapter edit of the KeePassXC entry is missing");
+    problems.push("adapter edit of the interop entry is missing");
   }
   return problems;
 }
 
 export interface InteropExpectations {
-  /** KeePassXC added `INTEROP_ENTRY` with its own writer. */
+  /** The other application added `INTEROP_ENTRY` with its own writer. */
   interopEntry: boolean;
   /** Public header custom data cannot survive an XML import. */
   publicCustomData: boolean;
-  /** KeePassXC XML exports omit attachment contents; verify those separately. */
+  /** Some XML exports (KeePassXC) omit attachment contents; verify those separately. */
   attachments: boolean;
 }
 
@@ -168,7 +168,7 @@ export function interopProblems(db: Kdbx, expected: InteropExpectations): string
       !!added &&
         added.fields.get("UserName") === INTEROP_ENTRY.userName &&
         sameField(added, "Password", { protected: INTEROP_ENTRY.password }),
-      "KeePassXC-added entry is wrong",
+      "interop entry is wrong",
     );
   }
   return problems;

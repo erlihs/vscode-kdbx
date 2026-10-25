@@ -88,6 +88,8 @@ function xmlIsModeled(db: Kdbx): boolean {
 }
 
 const KNOWN_ELEMENTS = new Set<string>(Object.values(XmlNames.Elem));
+// Every writer stamps its own name here; it identifies the writer, not user data.
+const WRITER_OWNED_PATHS = new Set(["/KeePassFile/Meta/Generator"]);
 
 function signature(
   root: Element,
@@ -97,6 +99,7 @@ function signature(
   const result = new Map<string, number>();
   const visit = (node: Element, parentPath: string): void => {
     const path = `${parentPath}/${node.tagName}`;
+    if (WRITER_OWNED_PATHS.has(path)) return;
     const attributes: string[] = [];
     for (let index = 0; index < node.attributes.length; index++) {
       const attribute = node.attributes[index]!;

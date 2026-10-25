@@ -10,7 +10,7 @@
     "typecheck": "tsgo -b && tsgo -p tsconfig.tests.json",
     "test": "pnpm build && vitest run",
     "compatibility": "pnpm build && node scripts/compatibility.mjs",
-    "interop": "pnpm build && node scripts/keepassxc-interop.mjs",
+    "interop": "pnpm build && node scripts/interop.mjs",
     "lint": "oxlint",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",

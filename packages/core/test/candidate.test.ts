@@ -96,6 +96,21 @@ describe("candidate preservation and known limitations", () => {
     );
   });
 
+  it("keeps empty attachments from XML binary pools", async () => {
+    const db = await fixture("aes256", "argon2id");
+    // KeePass exports an empty attachment exactly like this.
+    const xml = (await db.saveXml()).replace(
+      '<Binary ID="1"/>',
+      '<Binary ID="1" Compressed="True" />',
+    );
+    expect(xml).toContain('<Binary ID="1" Compressed="True" />');
+    const loaded = await Kdbx.loadXml(xml, credentials(SYNTHETIC_PASSWORD));
+    const entry = loaded.getDefaultGroup().groups.find((group) => group.entries.length)!
+      .entries[0]!;
+    const empty = entry.binaries.get("empty");
+    expect(empty && "value" in empty ? empty.value : empty).toEqual(new ArrayBuffer(0));
+  });
+
   it("rejects unsupported Argon2 versions rather than silently substituting", async () => {
     await expect(
       CryptoEngine.argon2(new ArrayBuffer(32), new ArrayBuffer(32), 1024, 2, 32, 1, 2, 0x10),

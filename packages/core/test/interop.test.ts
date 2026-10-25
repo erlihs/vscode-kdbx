@@ -5,19 +5,26 @@ import { credentials } from "../dist/candidate.js";
 import { SYNTHETIC_PASSWORD } from "../dist/fixture.js";
 import { ADAPTER_EDIT, applyAdapterEdit, interopProblems } from "../dist/interop.js";
 
-// Written by KeePassXC 2.8.0 via `pnpm interop -- --write-fixtures` (synthetic data only).
-const directory = new URL("./fixtures/keepassxc/", import.meta.url);
-const files = readdirSync(directory).filter((name) => name.endsWith(".kdbx"));
+// Written by KeePass 2.61.1 and KeePassXC 2.8.0 via `pnpm interop -- --app <app> --write-fixtures`
+// from synthetic data only.
+const applications = [
+  { app: "keepass", count: 12 },
+  { app: "keepassxc", count: 13 },
+];
 const password = () => credentials(SYNTHETIC_PASSWORD);
 
-function expectations(name: string) {
-  const imported = name === "keepassxc-import.kdbx";
-  return { interopEntry: !imported, publicCustomData: !imported, attachments: true };
-}
+describe.each(applications)("independent $app-written fixtures", ({ app, count }) => {
+  const directory = new URL(`./fixtures/${app}/`, import.meta.url);
+  const files = readdirSync(directory).filter((name) => name.endsWith(".kdbx"));
+  const imported = (name: string) => name === `${app}-import.kdbx`;
+  const expectations = (name: string) => ({
+    interopEntry: !imported(name),
+    publicCustomData: !imported(name),
+    attachments: true,
+  });
 
-describe("independent KeePassXC-written fixtures", () => {
-  it("covers every cipher/KDF/compression rewrite plus a KeePassXC-native import", () => {
-    expect(files).toHaveLength(13);
+  it("covers every cipher/KDF/compression rewrite", () => {
+    expect(files).toHaveLength(count);
   });
 
   it.each(files)("%s opens writable with all synthetic data intact", async (name) => {
@@ -26,8 +33,8 @@ describe("independent KeePassXC-written fixtures", () => {
       password(),
     );
     expect(loaded.header.version).toBe("4.1");
-    const [cipher, kdf, compression] = name.replace(".kdbx", "").split("-");
-    if (name !== "keepassxc-import.kdbx") {
+    if (!imported(name)) {
+      const [cipher, kdf, compression] = name.replace(".kdbx", "").split("-");
       expect(loaded.header).toMatchObject({ cipher, kdf, compression });
     }
     expect(loaded.readOnlyReasons).toEqual([]);

@@ -76,6 +76,15 @@ describe("unknown-data policy: preserve exactly or refuse writing", () => {
     expect((await loadDatabase(bytes, password())).readOnlyReasons).toEqual([]);
   });
 
+  it("treats KeePass spellings and its writer stamp as lossless", async () => {
+    const bytes = await saveWithXml(await fixture(), (doc) => {
+      doc.getElementsByTagName("Generator")[0]!.textContent = "KeePass";
+      doc.getElementsByTagName("EnableSearching")[0]!.textContent = "Null";
+      doc.getElementsByTagName("Tags")[1]!.textContent = "one;two";
+    });
+    expect((await loadDatabase(bytes, password())).readOnlyReasons).toEqual([]);
+  });
+
   it("refuses a tag the candidate would split differently", async () => {
     const bytes = await saveWithXml(await fixture(), (doc) => {
       doc.getElementsByTagName("Tags")[1]!.textContent = "one:two";

@@ -26,9 +26,14 @@ pnpm compatibility
   isolated Node workers and print a non-secret summary.
 - `pnpm compatibility -- --require-gate`: same probe, but exit unsuccessfully
   while release-gate blockers remain.
+- `pnpm interop -- --app keepass|keepassxc`: cross-application round trip with
+  KeePass 2.x (`KPScript` on `PATH` or `$KPSCRIPT`) or KeePassXC (`keepassxc-cli`
+  on `PATH` or `$KEEPASSXC_CLI`); add `--write-fixtures` to refresh the committed
+  fixtures that application wrote.
 
 CI runs on Windows, macOS and Linux with Node 22 and 24 and has passed on all six.
-Line endings are pinned to LF by `.gitattributes`.
+Separate jobs run the round trip against KeePass 2.61.1 (Windows) and the
+distribution's KeePassXC (Ubuntu). Line endings are pinned to LF by `.gitattributes`.
 Vite is supplied transitively by Vitest; a dedicated webview build will be
 introduced with the editor rather than adding an unused frontend now.
 
@@ -51,11 +56,11 @@ introduced with the editor rather than adding an unused frontend now.
 ## Gate status: blocked
 
 Tests characterize rather than conceal candidate limitations: decoded loading is
-not bounded.
-Independent KeePass-generated fixtures and cross-application verification are
-still required. Databases with data the candidate cannot save (unknown XML or
-header fields) open read-only, and Argon2 1.0 files (never written by KeePass or
-KeePassXC) are refused. See [the compatibility assessment](docs/compatibility.md).
+not bounded. Independent round trips with KeePass 2.61.1 and KeePassXC pass in
+both directions for every cipher/KDF/compression case. Databases with data the
+candidate cannot save (unknown XML or header fields) open read-only, and Argon2
+1.0 files (never written by KeePass or KeePassXC) are refused. See
+[the compatibility assessment](docs/compatibility.md).
 
 The VS Code editor, user-facing database operations, persistence/recovery and
 Marketplace packaging have **not** been implemented. The specification forbids
