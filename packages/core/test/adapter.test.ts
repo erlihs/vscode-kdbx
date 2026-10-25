@@ -53,6 +53,18 @@ describe("unknown-data policy: preserve exactly or refuse writing", () => {
       (doc: Document) => doc.getElementsByTagName("Entry")[0]!.setAttribute("Future", "z"),
     ],
     [
+      "unknown Generator attribute",
+      (doc: Document) => doc.getElementsByTagName("Generator")[0]!.setAttribute("Future", "z"),
+    ],
+    [
+      "unknown Generator child",
+      (doc: Document) => append(doc, "Generator", "FutureMetadata", "synthetic value"),
+    ],
+    [
+      "empty unknown Generator child",
+      (doc: Document) => append(doc, "Generator", "FutureMetadata"),
+    ],
+    [
       "value the model normalizes",
       (doc: Document) => {
         doc.getElementsByTagName("EnableAutoType")[0]!.textContent = "maybe";
@@ -83,6 +95,16 @@ describe("unknown-data policy: preserve exactly or refuse writing", () => {
       doc.getElementsByTagName("Tags")[1]!.textContent = "one;two";
     });
     expect((await loadDatabase(bytes, password())).readOnlyReasons).toEqual([]);
+  });
+
+  it.each(["KeePass", "KeePassXC", ""])("allows writer-owned Generator text %j", async (text) => {
+    const bytes = await saveWithXml(await fixture(), (doc) => {
+      doc.getElementsByTagName("Generator")[0]!.textContent = text;
+    });
+    const loaded = await loadDatabase(bytes, password());
+    expect(loaded.readOnlyReasons).toEqual([]);
+    const reopened = await loadDatabase(new Uint8Array(await saveDatabase(loaded)), password());
+    expect(reopened.readOnlyReasons).toEqual([]);
   });
 
   it("refuses a tag the candidate would split differently", async () => {

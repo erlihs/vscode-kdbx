@@ -1,5 +1,5 @@
 diff --git a/dist/index.js b/dist/index.js
-index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..ac1550d0f2ad4ccad2e6eafdbaa4fff5aa29a6ef 100644
+index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..c8885f6623cc3a4634888a05b419b402ebf0bdda 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -171,7 +171,8 @@ var ErrorCodes = {
@@ -18,14 +18,14 @@ index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..ac1550d0f2ad4ccad2e6eafdbaa4fff5
  });
 -import { gunzipSync } from "fflate";
 +import { Gunzip } from "fflate";
-+var decompressionBudget = { limit: Infinity, used: 0 };
-+function gunzipBounded(bytes) {
++var maxDecompressedBytes = Infinity;
++function gunzipBounded(bytes, budget) {
 +  const chunks = [];
 +  let total = 0;
 +  const gunzip = new Gunzip((chunk) => {
 +    total += chunk.length;
-+    decompressionBudget.used += chunk.length;
-+    if (decompressionBudget.used > decompressionBudget.limit) {
++    budget.used += chunk.length;
++    if (budget.used > budget.limit) {
 +      throw new KdbxError(ErrorCodes.ResourceLimit, "decompressed data exceeds the limit");
 +    }
 +    chunks.push(chunk);
@@ -59,6 +59,15 @@ index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..ac1550d0f2ad4ccad2e6eafdbaa4fff5
      const errMsg = e instanceof Error ? e.message : String(e);
      throw new KdbxError(ErrorCodes.FileCorrupt, `bad xml: ${errMsg}`);
    }
+@@ -2129,7 +2161,7 @@ function setProtectedText(node, text) {
+     setText(node, text);
+   }
+ }
+-function getProtectedBinary(node) {
++function getProtectedBinary(node, budget = { limit: maxDecompressedBytes, used: 0 }) {
+   const protectedValue = protectedValues.get(node);
+   if (protectedValue) {
+     return protectedValue;
 @@ -2140,12 +2172,12 @@ function getProtectedBinary(node) {
      return { ref };
    }
@@ -70,7 +79,7 @@ index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..ac1550d0f2ad4ccad2e6eafdbaa4fff5
    let bytes = base64ToBytes(text);
    if (compressed) {
 -    bytes = gunzipSync(bytes);
-+    bytes = gunzipBounded(bytes);
++    bytes = gunzipBounded(bytes, budget);
    }
    return arrayToBuffer(bytes);
  }
@@ -87,6 +96,24 @@ index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..ac1550d0f2ad4ccad2e6eafdbaa4fff5
        } catch (e) {
          const line = node2.lineNumber;
          const at = line === void 0 ? "" : ` at line ${line}`;
+@@ -2510,7 +2540,7 @@ var KdbxEntry = class _KdbxEntry {
+   readBinary(node, ctx) {
+     const keyNode = getChildNode(node, Elem.Key), valueNode = getChildNode(node, Elem.Value);
+     if (keyNode && valueNode) {
+-      const key = getText(keyNode), value = getProtectedBinary(valueNode);
++      const key = getText(keyNode), value = getProtectedBinary(valueNode, ctx.decompressionBudget);
+       if (key && value) {
+         if (KdbxBinaries.isKdbxBinaryRef(value)) {
+           const binary = ctx.kdbx.binaries.getByRef(value);
+@@ -3516,7 +3546,7 @@ var KdbxMeta = class _KdbxMeta {
+   }
+   readBinary(node, ctx) {
+     const id = node.getAttribute(Attr.Id);
+-    const binary = getProtectedBinary(node);
++    const binary = getProtectedBinary(node, ctx.decompressionBudget);
+     if (id && binary) {
+       if (KdbxBinaries.isKdbxBinaryRef(binary)) {
+         throw new KdbxError(ErrorCodes.FileCorrupt, "binary ref in meta");
 @@ -4417,6 +4447,9 @@ var KdbxHeader = class _KdbxHeader {
      const size = this.readFieldSize(stm);
      const bytes = size > 0 ? stm.readBytes(size) : new ArrayBuffer(0);
@@ -97,7 +124,7 @@ index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..ac1550d0f2ad4ccad2e6eafdbaa4fff5
      if (!headerField) {
        return true;
      }
-@@ -4738,7 +4771,7 @@ var KdbxHeader = class _KdbxHeader {
+@@ -4738,12 +4771,13 @@ var KdbxHeader = class _KdbxHeader {
  };
  
  // lib/format/kdbx-format.ts
@@ -106,45 +133,51 @@ index d8a908a58d9cfe9c5d4eb5acc06482d700bbbb02..ac1550d0f2ad4ccad2e6eafdbaa4fff5
  
  // lib/format/kdbx-context.ts
  var KdbxContext = class {
-@@ -4765,7 +4798,15 @@ var KdbxFormat = class {
+   kdbx;
+   exportXml;
++  decompressionBudget;
+   constructor(opts) {
+     this.kdbx = opts.kdbx;
+     this.exportXml = !!opts.exportXml;
+@@ -4765,7 +4799,15 @@ var KdbxFormat = class {
      this.kdbx = kdbx;
      this.ctx = new KdbxContext({ kdbx });
    }
 +  /** Upper bound on all bytes decompressed by one load, including XML binaries. */
 +  static get maxDecompressedBytes() {
-+    return decompressionBudget.limit;
++    return maxDecompressedBytes;
 +  }
 +  static set maxDecompressedBytes(value) {
-+    decompressionBudget.limit = value;
++    maxDecompressedBytes = value;
 +  }
    async load(data) {
-+    decompressionBudget.used = 0;
++    this.ctx.decompressionBudget = { limit: maxDecompressedBytes, used: 0 };
      const stm = new BinaryStream(data);
      await this.kdbx.credentials.ready;
      this.kdbx.header = KdbxHeader.read(stm, this.ctx);
-@@ -4807,7 +4848,7 @@ var KdbxFormat = class {
+@@ -4807,7 +4849,7 @@ var KdbxFormat = class {
        zeroBuffer(keys.hmacKey);
      }
      if (this.kdbx.header.compression === CompressionAlgorithm.GZip) {
 -      data = arrayToBuffer(gunzipSync2(new Uint8Array(data)));
-+      data = arrayToBuffer(gunzipBounded(new Uint8Array(data)));
++      data = arrayToBuffer(gunzipBounded(new Uint8Array(data), this.ctx.decompressionBudget));
      }
      const innerStm = new BinaryStream(arrayToBuffer(data));
      this.kdbx.header.readInnerHeader(innerStm, this.ctx);
-@@ -4818,6 +4859,7 @@ var KdbxFormat = class {
+@@ -4818,6 +4860,7 @@ var KdbxFormat = class {
      return this.kdbx;
    }
    async loadXml(xmlStr) {
-+    decompressionBudget.used = 0;
++    this.ctx.decompressionBudget = { limit: maxDecompressedBytes, used: 0 };
      await this.kdbx.credentials.ready;
      this.kdbx.header = KdbxHeader.create();
      this.kdbx.xml = parse(xmlStr);
-@@ -4926,7 +4968,7 @@ var KdbxFormat = class {
+@@ -4926,7 +4969,7 @@ var KdbxFormat = class {
      data = this.trimStartBytesV3(data);
      data = await decrypt(data);
      if (this.kdbx.header.compression === CompressionAlgorithm.GZip) {
 -      data = arrayToBuffer(gunzipSync2(new Uint8Array(data)));
-+      data = arrayToBuffer(gunzipBounded(new Uint8Array(data)));
++      data = arrayToBuffer(gunzipBounded(new Uint8Array(data), this.ctx.decompressionBudget));
      }
      return bytesToString(data);
    }
@@ -160,6 +193,23 @@ index c343a1691576d5dce4aeefa8452c2e177da1189b..cfe63e69f6d66d6ba14592b40663a4aa
  };
  export declare const CompressionAlgorithm: {
      readonly None: 0;
+diff --git a/dist/types/format/kdbx-context.d.ts b/dist/types/format/kdbx-context.d.ts
+index 9574d812f7ff948af6472aa041b6053259d52500..c04318b836e33f6123831938f9d19977fae6cdc6 100644
+--- a/dist/types/format/kdbx-context.d.ts
++++ b/dist/types/format/kdbx-context.d.ts
+@@ -1,7 +1,12 @@
+ import { Kdbx } from './kdbx';
++export interface DecompressionBudget {
++    limit: number;
++    used: number;
++}
+ export declare class KdbxContext {
+     readonly kdbx: Kdbx;
+     exportXml: boolean;
++    decompressionBudget?: DecompressionBudget;
+     constructor(opts: {
+         kdbx: Kdbx;
+         exportXml?: boolean;
 diff --git a/dist/types/format/kdbx-format.d.ts b/dist/types/format/kdbx-format.d.ts
 index 592c7a84f2a0b22561a61c84174e8477576d709e..adc0da71036144655b70a9e0d9beba98e2f11628 100644
 --- a/dist/types/format/kdbx-format.d.ts
@@ -186,3 +236,24 @@ index 65ead93589f79bc3f49e6430024b9408160bd4f5..ca9abca19c648fea3b4825d8bf6905bb
      private readSignature;
      private writeSignature;
      private readVersion;
+diff --git a/dist/types/utils/xml-utils.d.ts b/dist/types/utils/xml-utils.d.ts
+index 307d7ac0eaf86b1a2345745e4d06e23ec1d59af7..a5efa747ead657941ce78e61daa0ce90a2ad7fea 100644
+--- a/dist/types/utils/xml-utils.d.ts
++++ b/dist/types/utils/xml-utils.d.ts
+@@ -2,6 +2,7 @@ import { KdbxUuid } from '../format/kdbx-uuid';
+ import { ProtectedValue } from '../crypto/protected-value';
+ import { ProtectSaltGenerator } from '../crypto/protect-salt-generator';
+ import { KdbxBinaryOrRef } from '../format/kdbx-binaries';
++import type { DecompressionBudget } from '../format/kdbx-context';
+ export declare function getNodeProtectedValue(node: Node): ProtectedValue | undefined;
+ export declare function setNodeProtectedValue(node: Node, value: ProtectedValue | undefined): void;
+ export declare function parse(xml: string): Document;
+@@ -32,7 +33,7 @@ export declare function getUuid(node: Node): KdbxUuid | undefined;
+ export declare function setUuid(node: Node, uuid: KdbxUuid | ArrayBuffer | Uint8Array | string | undefined): void;
+ export declare function getProtectedText(node: Node): ProtectedValue | string | undefined;
+ export declare function setProtectedText(node: Node, text: ProtectedValue | string): void;
+-export declare function getProtectedBinary(node: Node): KdbxBinaryOrRef | undefined;
++export declare function getProtectedBinary(node: Node, budget?: DecompressionBudget): KdbxBinaryOrRef | undefined;
+ export declare function setProtectedBinary(node: Node, binary: KdbxBinaryOrRef): void;
+ export declare function traverse(node: Node, callback: (node: Element) => void): void;
+ export declare function setProtectedValues(node: Node, protectSaltGenerator: ProtectSaltGenerator): void;

@@ -51,9 +51,12 @@ introduced with the editor rather than adding an unused frontend now.
   metadata, plus tampering, cancellation and exact header/KDF limit boundaries.
 - A worker-internal load/save adapter that opens databases read-only when saving
   would drop unmodeled XML or header data, plus a reviewed local patch of the
-  candidate (`patches/`).
-- Bounded decoded loading: streaming, budgeted decompression and an XML pre-scan
-  (size, elements, depth, no DTDs) before any DOM is built.
+  candidate (`patches/`). Only the writer-name text of `Meta/Generator` is exempt
+  from that check; unknown attributes or children there still force read-only.
+- Bounded decoded loading: streaming decompression against a per-load budget
+  (captured when the load starts, shared by the payload and every compressed XML
+  binary, never shared between concurrent loads) and an XML pre-scan (size,
+  elements, depth, no DTDs) before any DOM is built.
 - Cross-application round trips with KeePass 2.x and KeePassXC, with the files
   they wrote committed as independent fixtures.
 
@@ -63,8 +66,8 @@ Every data-loss and library blocker is resolved. Independent round trips with
 KeePass 2.61.1 and KeePassXC 2.7/2.8 pass in both directions for every
 cipher/KDF/compression case. Databases with data the candidate cannot save
 (unknown XML or header fields) open read-only, Argon2 1.0 files (never written by
-KeePass or KeePassXC) are refused, and decoded data is admitted against ceilings
-before allocation.
+KeePass or KeePassXC) are refused, and decoded data is admitted against per-load
+ceilings before allocation, including under concurrent loads.
 
 The gate stays closed until two remaining items are done: calibrating defaults and
 performance (new-database KDF settings, a reference machine, worker heap sizing for

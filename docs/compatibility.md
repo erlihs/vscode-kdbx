@@ -93,6 +93,7 @@ therefore **refuses a writable round trip** instead of preserving opaque data:
   requires every original element path, attribute and leaf value to reappear.
   Protected values are compared by object identity, so no plaintext enters the check.
   Binary `Ref` numbers are excluded because the referenced bytes live in the inner header.
+  Only the writer-owned text of `Meta/Generator` is exempt, not its attributes or children.
 - Outer/inner header fields the candidate would not write (unknown IDs and `Comment`)
   are recorded by a local patch and also make the database read-only.
 - Unknown outer header fields and KDF parameters are still rejected by preflight.
@@ -116,6 +117,10 @@ candidate is upgraded and proposed upstream:
 - Every decompression (KDBX 4 payload, KDBX 3 payload, `Compressed` XML binaries)
   streams through fflate's `Gunzip` in 4 KiB input steps against a per-load budget,
   `KdbxFormat.maxDecompressedBytes`, failing with the new `ResourceLimit` error code.
+  Each load captures the configured ceiling before awaiting credentials and carries
+  its own accounting object through `KdbxContext` to payload and XML-binary decoding.
+  Concurrent loads do not share counters, and changing the configured ceiling only
+  affects subsequently started loads.
 - `KdbxError`s thrown by the supplied `DOMParser` propagate instead of being rewrapped
   as "bad xml", so XML limits stay distinguishable from corruption.
 
@@ -130,6 +135,8 @@ All decoded data is admitted against ceilings **before** it is allocated in full
   zero bomb (1 MB compressed) and a 16 MiB ceiling: rejected in 125 ms with a
   45 MiB peak, where unpatched `gunzipSync` allocated 1025 MiB. Uncompressed
   payloads are already bounded by the 100 MiB encrypted-input ceiling.
+  Regression tests cover concurrent binary loads and XML imports, mixed successful/
+  over-limit loads, recovery after failure, and aggregate payload/XML-binary accounting.
 - **XML:** the `DOMParser` supplied to the candidate first runs a linear,
   allocation-free scan (`packages/core/src/xml-limits.ts`) that enforces size,
   element-count and nesting-depth ceilings and rejects any DTD, so entities can
@@ -176,7 +183,9 @@ Findings that shaped the adapter:
 - Equivalent spellings are not data changes: booleans (`False`/`false`, `Null`),
   tag separators (`;`, `,`) and empty known elements such as `<DefaultSequence/>`.
   Tags are only split on `;`/`,`; a tag the candidate would re-split (`a:b`) still
-  makes the database read-only. `Meta/Generator` is the writer's own stamp.
+  makes the database read-only. Only the text of `Meta/Generator` is the writer's
+  own stamp; unknown attributes and child elements still participate in the
+  preservation check and force read-only mode if they would be lost.
 - KeePassXC drops `LastModificationTime` from group custom data and adds its own
   `_LAST_MODIFIED`/`KPXC_RANDOM_SLUG` items; this is KeePassXC behaviour, not ours.
 - KeePassXC XML exports omit attachment contents, and `attachment-export --stdout`

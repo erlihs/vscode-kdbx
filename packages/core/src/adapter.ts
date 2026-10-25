@@ -94,8 +94,8 @@ function xmlIsModeled(db: Kdbx): boolean {
 }
 
 const KNOWN_ELEMENTS = new Set<string>(Object.values(XmlNames.Elem));
-// Every writer stamps its own name here; it identifies the writer, not user data.
-const WRITER_OWNED_PATHS = new Set(["/KeePassFile/Meta/Generator"]);
+// Only the writer-name text is exempt; attributes and children still carry data.
+const GENERATOR_PATH = "/KeePassFile/Meta/Generator";
 
 function signature(
   root: Element,
@@ -105,7 +105,6 @@ function signature(
   const result = new Map<string, number>();
   const visit = (node: Element, parentPath: string): void => {
     const path = `${parentPath}/${node.tagName}`;
-    if (WRITER_OWNED_PATHS.has(path)) return;
     const attributes: string[] = [];
     for (let index = 0; index < node.attributes.length; index++) {
       const attribute = node.attributes[index]!;
@@ -126,7 +125,7 @@ function signature(
         if (id === undefined) ids.set(protectedValue, (id = counter.next++));
         value = `#protected:${id}`;
       } else {
-        value = canonicalText(node.tagName, node.textContent ?? "");
+        value = path === GENERATOR_PATH ? "" : canonicalText(node.tagName, node.textContent ?? "");
         // An empty, attribute-free known element carries the same meaning as its absence.
         if (!value && !attributes.length && KNOWN_ELEMENTS.has(node.tagName)) return;
       }
