@@ -15,7 +15,7 @@ export const INPUT_LIMITS = Object.freeze({
   encryptedBytes: 100 * 1024 * 1024,
   headerBytes: 64 * 1024,
   argonMemoryBytes: 256 * 1024 * 1024,
-  argonIterations: 10,
+  argonIterations: 100,
   argonParallelism: 4,
   aesRounds: 10_000_000,
   // All bytes decompressed by one load: inner header attachments plus XML.

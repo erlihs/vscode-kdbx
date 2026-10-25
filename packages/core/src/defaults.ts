@@ -11,7 +11,7 @@ export const NEW_DATABASE_KDF = Object.freeze({
   maxMemoryBytes: INPUT_LIMITS.argonMemoryBytes,
   parallelism: 2,
   minIterations: 2,
-  maxIterations: INPUT_LIMITS.argonIterations,
+  maxIterations: 10,
   targetMs: 1000,
 });
 

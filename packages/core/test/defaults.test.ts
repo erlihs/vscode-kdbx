@@ -33,7 +33,7 @@ describe("new-database Argon2id calibration", () => {
     const result = await calibrateArgon2id(measure);
     expect(result.parameters).toEqual({
       memoryBytes: INPUT_LIMITS.argonMemoryBytes,
-      iterations: INPUT_LIMITS.argonIterations,
+      iterations: NEW_DATABASE_KDF.maxIterations,
       parallelism: 2,
     });
   });

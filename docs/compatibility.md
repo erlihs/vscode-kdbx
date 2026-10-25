@@ -333,7 +333,7 @@ database statistics:
 | Encrypted input           | 100 MiB                                               |
 | Outer header              | 64 KiB                                                |
 | Argon2 memory             | 256 MiB                                               |
-| Argon2 passes             | 10                                                    |
+| Argon2 passes             | 100                                                   |
 | Argon2 parallelism        | 4                                                     |
 | AES-KDF rounds            | 10,000,000                                            |
 | Decoded bytes per load    | 256 MiB (payload, attachments and XML binaries)       |
@@ -347,6 +347,8 @@ Argon2 memory must be an integer number of KiB and at least 8 KiB per lane.
 Fixture-only parameters are **1 MiB, 2 passes, 1 lane** for Argon2 and **1,000
 rounds** for AES-KDF. They are deliberately weak to keep regression tests fast
 and are never creation defaults; new databases use `calibrateArgon2id`.
+The 100-pass admission ceiling applies to both Argon2d and Argon2id; new-database
+calibration retains its separate 10-pass ceiling.
 
 The 10 MiB per-attachment ceiling is enforced for new attachment imports.
 Explicit native import/export APIs and UI are implemented. Existing

@@ -179,6 +179,20 @@ describe("bounded, unauthenticated header inspection", () => {
     },
   );
 
+  it.each([
+    ["argon2d", Consts.KdfId.Argon2d],
+    ["argon2id", Consts.KdfId.Argon2id],
+  ])("accepts 100 passes and rejects 101 for %s", async (kdf, id) => {
+    const db = await Kdbx.load(fixture.buffer, credentials(SYNTHETIC_PASSWORD));
+    db.setKdf(id);
+    for (const iterations of [45, 100, 101]) {
+      db.header.kdfParameters!.set("I", VarDictionary.ValueType.UInt64, Int64.from(iterations));
+      const bytes = rewriteHeader(db);
+      if (iterations <= 100) expect(inspectHeader(bytes)).toMatchObject({ kdf, iterations });
+      else expectCode(bytes, "RESOURCE_LIMIT");
+    }
+  });
+
   it("rejects unsupported Argon2 1.0 explicitly", async () => {
     const db = await Kdbx.load(fixture.buffer, credentials(SYNTHETIC_PASSWORD));
     db.header.kdfParameters!.set("V", VarDictionary.ValueType.UInt32, 0x10);
