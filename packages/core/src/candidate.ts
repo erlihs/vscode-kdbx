@@ -1,14 +1,24 @@
-import { CryptoEngine, KdbxCredentials, ProtectedValue } from "@keenext/kdbxweb";
+import { CryptoEngine, KdbxCredentials, KdbxFormat, ProtectedValue } from "@keenext/kdbxweb";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { argon2d, argon2id } from "hash-wasm";
 import { DatabaseError } from "./errors.js";
 import { INPUT_LIMITS } from "./preflight.js";
+import { scanXml } from "./xml-limits.js";
+
+/** Refuses oversized or DTD-bearing XML before any DOM is allocated. */
+class BoundedDOMParser extends DOMParser {
+  override parseFromString(source: string, mimeType: string) {
+    scanXml(source);
+    return super.parseFromString(source, mimeType);
+  }
+}
 
 // Only the isolated compatibility worker imports this module.
 Object.defineProperties(globalThis, {
-  DOMParser: { value: DOMParser, configurable: true },
+  DOMParser: { value: BoundedDOMParser, configurable: true },
   XMLSerializer: { value: XMLSerializer, configurable: true },
 });
+KdbxFormat.maxDecompressedBytes = INPUT_LIMITS.decodedBytes;
 
 CryptoEngine.setArgon2Impl(
   async (password, salt, memory, iterations, length, parallelism, type, version) => {

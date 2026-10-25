@@ -18,6 +18,11 @@ export const INPUT_LIMITS = Object.freeze({
   argonIterations: 10,
   argonParallelism: 4,
   aesRounds: 10_000_000,
+  // All bytes decompressed by one load: inner header attachments plus XML.
+  decodedBytes: 256 * 1024 * 1024,
+  xmlChars: 64 * 1024 * 1024,
+  xmlElements: 1_000_000,
+  xmlDepth: 256,
 });
 
 export type Cipher = "aes256" | "chacha20";

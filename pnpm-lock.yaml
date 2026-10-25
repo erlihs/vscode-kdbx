@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@keenext/kdbxweb@2.2.0-keenext.2':
-    hash: 87b62d1d6b9a7323a67782204693cbd528dbe635837d4bf24df807a1522784ee
+    hash: 732e594eeaef3f08c7dfd7c0eb357a3d806b53698c37d94d9e0853499968d9e2
     path: patches/@keenext__kdbxweb@2.2.0-keenext.2.patch
 
 importers:
@@ -33,7 +33,7 @@ importers:
     dependencies:
       '@keenext/kdbxweb':
         specifier: 2.2.0-keenext.2
-        version: 2.2.0-keenext.2(patch_hash=87b62d1d6b9a7323a67782204693cbd528dbe635837d4bf24df807a1522784ee)
+        version: 2.2.0-keenext.2(patch_hash=732e594eeaef3f08c7dfd7c0eb357a3d806b53698c37d94d9e0853499968d9e2)
       '@xmldom/xmldom':
         specifier: 0.9.12
         version: 0.9.12
@@ -752,7 +752,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@keenext/kdbxweb@2.2.0-keenext.2(patch_hash=87b62d1d6b9a7323a67782204693cbd528dbe635837d4bf24df807a1522784ee)':
+  '@keenext/kdbxweb@2.2.0-keenext.2(patch_hash=732e594eeaef3f08c7dfd7c0eb357a3d806b53698c37d94d9e0853499968d9e2)':
     dependencies:
       fflate: 0.8.3
 

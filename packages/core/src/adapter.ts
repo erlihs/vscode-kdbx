@@ -55,6 +55,12 @@ export async function saveDatabase(loaded: LoadedDatabase): Promise<ArrayBuffer>
 
 function toDatabaseError(error: unknown): DatabaseError {
   if (error instanceof DatabaseError) return error;
+  if (error instanceof KdbxError && error.code === "ResourceLimit") {
+    return new DatabaseError(
+      "RESOURCE_LIMIT",
+      "The decrypted database exceeds the local size limits. It was not fully loaded.",
+    );
+  }
   if (error instanceof KdbxError && error.code === "InvalidKey") {
     return new DatabaseError(
       "AUTHENTICATION_OR_INTEGRITY",

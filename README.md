@@ -52,15 +52,24 @@ introduced with the editor rather than adding an unused frontend now.
 - A worker-internal load/save adapter that opens databases read-only when saving
   would drop unmodeled XML or header data, plus a reviewed local patch of the
   candidate (`patches/`).
+- Bounded decoded loading: streaming, budgeted decompression and an XML pre-scan
+  (size, elements, depth, no DTDs) before any DOM is built.
+- Cross-application round trips with KeePass 2.x and KeePassXC, with the files
+  they wrote committed as independent fixtures.
 
 ## Gate status: blocked
 
-Tests characterize rather than conceal candidate limitations: decoded loading is
-not bounded. Independent round trips with KeePass 2.61.1 and KeePassXC pass in
-both directions for every cipher/KDF/compression case. Databases with data the
-candidate cannot save (unknown XML or header fields) open read-only, and Argon2
-1.0 files (never written by KeePass or KeePassXC) are refused. See
-[the compatibility assessment](docs/compatibility.md).
+Every data-loss and library blocker is resolved. Independent round trips with
+KeePass 2.61.1 and KeePassXC 2.7/2.8 pass in both directions for every
+cipher/KDF/compression case. Databases with data the candidate cannot save
+(unknown XML or header fields) open read-only, Argon2 1.0 files (never written by
+KeePass or KeePassXC) are refused, and decoded data is admitted against ceilings
+before allocation.
+
+The gate stays closed until two remaining items are done: calibrating defaults and
+performance (new-database KDF settings, a reference machine, worker heap sizing for
+the XML ceilings) and a VS Code-host/VSIX packaging check of the worker and WASM.
+See [the compatibility assessment](docs/compatibility.md).
 
 The VS Code editor, user-facing database operations, persistence/recovery and
 Marketplace packaging have **not** been implemented. The specification forbids
@@ -71,9 +80,12 @@ not export an open/save API for real databases.
 
 Runtime probes use only generated synthetic data, stay in memory, make no
 network requests and do not write databases or plaintext snapshots to disk.
+`pnpm interop` is the exception: it writes synthetic databases to a temporary
+directory for the external application and deletes them afterwards.
 Package installation and dependency auditing do use the package registry.
 Worker cancellation waits for termination; Node's worker heap limits **do not**
-bound WASM or ArrayBuffer memory and are not a complete hostile-input boundary.
+bound WASM or ArrayBuffer memory, so decoded data is bounded by explicit
+admission ceilings instead.
 Header inspection verifies only a public checksum, not authenticity or the
 encrypted payload. A passing probe is not a security review or release approval.
 

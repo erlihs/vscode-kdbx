@@ -26,6 +26,7 @@ for (const cipher of ["aes256", "chacha20"]) {
 }
 console.table(rows);
 console.log(
-  "GATE NOT PASSED: unbounded decoded loading remains unresolved. See docs/compatibility.md.",
+  "GATE NOT PASSED: defaults/performance calibration and VS Code-host/VSIX packaging " +
+    "remain unverified. See docs/compatibility.md.",
 );
 if (process.argv.includes("--require-gate")) process.exitCode = 1;

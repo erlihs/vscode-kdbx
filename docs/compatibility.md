@@ -2,8 +2,10 @@
 
 ## Status and reproducibility
 
-Phase 1 is **not passed**. This document records implemented evidence and open
-blockers, not a production compatibility promise.
+Phase 1 is **not passed**. Every data-loss and library blocker is resolved; the
+remaining rows are calibration of defaults/performance and a VS Code-host/VSIX
+packaging check. This document records implemented evidence and open blockers,
+not a production compatibility promise.
 
 Run `pnpm check`, `pnpm compatibility`, `pnpm audit --prod` and, with KeePass or
 KeePassXC available, `pnpm interop -- --app keepass|keepassxc`.
@@ -111,6 +113,35 @@ candidate is upgraded and proposed upstream:
   KeePass reads them the same way; the inner random stream advances by zero bytes.
 - Empty binaries in XML binary pools (`<Binary ID="1" Compressed="True" />`, as
   KeePass exports them) load as empty attachments instead of being dropped.
+- Every decompression (KDBX 4 payload, KDBX 3 payload, `Compressed` XML binaries)
+  streams through fflate's `Gunzip` in 4 KiB input steps against a per-load budget,
+  `KdbxFormat.maxDecompressedBytes`, failing with the new `ResourceLimit` error code.
+- `KdbxError`s thrown by the supplied `DOMParser` propagate instead of being rewrapped
+  as "bad xml", so XML limits stay distinguishable from corruption.
+
+## Bounded decoded loading
+
+All decoded data is admitted against ceilings **before** it is allocated in full:
+
+- **Decompression:** the patched candidate aborts once one load has decompressed
+  more than 256 MiB in total, covering inner-header attachments (so aggregate
+  attachment size), XML and compressed XML binaries. Each 4 KiB input step can
+  expand by at most ~1032:1, so the overshoot is a few MiB. Measured with a 1 GiB
+  zero bomb (1 MB compressed) and a 16 MiB ceiling: rejected in 125 ms with a
+  45 MiB peak, where unpatched `gunzipSync` allocated 1025 MiB. Uncompressed
+  payloads are already bounded by the 100 MiB encrypted-input ceiling.
+- **XML:** the `DOMParser` supplied to the candidate first runs a linear,
+  allocation-free scan (`packages/core/src/xml-limits.ts`) that enforces size,
+  element-count and nesting-depth ceilings and rejects any DTD, so entities can
+  never expand. History and entry counts are bounded through the element ceiling.
+- Limit failures surface as `RESOURCE_LIMIT`, never as truncated or partial data.
+  Tests cover exact boundaries, markup-like text in attributes/comments/CDATA,
+  gzip bombs in the payload and in XML binary pools, and over-deep group nesting.
+
+The candidate's DOM costs about 1.06 KiB of heap per element (measured with
+KeePass-shaped XML), so the 1,000,000-element ceiling needs roughly 1.1 GiB. The
+product worker's heap must be sized to the final ceilings, or the ceilings lowered;
+an out-of-memory worker is terminated and reported, never partially loaded.
 
 ## Independent interoperability
 
@@ -161,18 +192,19 @@ Findings that shaped the adapter:
 | Requirement              | Evidence / remaining work                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | KeePass interoperability | **Resolved** for the core: KeePass 2.61.1 and KeePassXC 2.7.6/2.8.0 round trips in both directions; see [Independent interoperability](#independent-interoperability). Editing through the extension UI is verified when the UI exists.                                                                                                                                                                                                                                                           |
-| Bounded decoded loading  | Both inspected JS candidates call synchronous `gunzipSync` without an output ceiling, then build an XML DOM without complexity ceilings. Post-load size checks and worker old-generation limits would not fix this. A bounded library path or another verified adapter is required.                                                                                                                                                                                                               |
+| Bounded decoded loading  | **Resolved** by streaming, budgeted decompression in the local patch and an XML pre-scan; see [Bounded decoded loading](#bounded-decoded-loading).                                                                                                                                                                                                                                                                                                                                                |
 | Unknown-data policy      | **Resolved** by refusing writes; see [Unknown-data policy](#unknown-data-policy). There is still deliberately no public real-database open/save API.                                                                                                                                                                                                                                                                                                                                              |
 | Protected empty values   | **Resolved** by the [local candidate patch](#local-candidate-patch); every matrix case round-trips an empty protected field.                                                                                                                                                                                                                                                                                                                                                                      |
 | Argon2 versions          | **Resolved by policy.** KeePass always writes Argon2 1.3 and KeePassXC defaults to it ([source](https://github.com/keepassxreboot/keepassxc/blob/develop/src/crypto/kdf/Argon2Kdf.cpp)); neither UI exposes the version, so 1.0 files come only from third-party tools. Version 1.0 is refused as `UNSUPPORTED` during preflight, before any key derivation, and the provider adapter independently refuses to derive with the wrong version. `hash-wasm` (1.3 only) is accepted as the provider. |
-| Resource limits          | Only encrypted/header/KDF admission ceilings are implemented. Decoded bytes, XML nodes/depth, aggregate attachments and history need enforceable pre-allocation bounds, not silent truncation.                                                                                                                                                                                                                                                                                                    |
-| Defaults/performance     | Synthetic fixtures use low work factors. New-database memory floor, one-second calibration, reference-machine approval and responsive/cancellable production workflows remain unverified.                                                                                                                                                                                                                                                                                                         |
+| Resource limits          | **Resolved** as enforceable admission ceilings: encrypted input, header, KDF work, decoded bytes (including aggregate attachments), XML size, elements and depth (bounding history). Values remain experimental; see below.                                                                                                                                                                                                                                                                       |
+| Defaults/performance     | Synthetic fixtures use low work factors. New-database memory floor, one-second calibration, reference-machine approval, worker heap sizing for the XML ceilings, and responsive/cancellable production workflows remain unverified.                                                                                                                                                                                                                                                               |
 | Platform/packaging       | Node/CI behaviour is verified on Windows/macOS/Linux (see above). Workers use Node ESM and embedded WASM without native addons, but VS Code-host and packaged VSIX checks remain unrun. The extension's minimum VS Code version is not selected.                                                                                                                                                                                                                                                  |
 
 Passing characterization tests means the limitation is reproducible, **not**
 that a blocker has been waived. `pnpm compatibility -- --require-gate` deliberately
-fails while this gate is blocked. No automatic CI or release task publishes
-anything.
+fails while the defaults/performance and platform/packaging rows are open; they
+need calibration on a reference machine and a VS Code-host/VSIX smoke test rather
+than more library work. No automatic CI or release task publishes anything.
 
 ## Experimental limits
 
@@ -187,6 +219,10 @@ only be finalized after compatibility/performance testing:
 | Argon2 passes             | 10                                                    |
 | Argon2 parallelism        | 4                                                     |
 | AES-KDF rounds            | 10,000,000                                            |
+| Decoded bytes per load    | 256 MiB (payload, attachments and XML binaries)       |
+| Decrypted XML             | 64 Mi characters                                      |
+| XML elements              | 1,000,000                                             |
+| XML nesting depth         | 256                                                   |
 | Synthetic worker deadline | 30 seconds, explicitly configurable up to 120 seconds |
 
 Argon2 memory must be an integer number of KiB and at least 8 KiB per lane.
@@ -194,8 +230,10 @@ Fixture-only parameters are **1 MiB, 2 passes, 1 lane** for Argon2 and **1,000
 rounds** for AES-KDF. They are deliberately weak to keep regression tests fast
 and must never become creation defaults.
 
-The spec's proposed 10 MiB attachment ceiling is not implemented; no attachment
-import or export API is exposed. The public header inspector neither authenticates
+The spec's proposed 10 MiB per-attachment ceiling applies to importing attachments
+and is not implemented; no attachment import or export API is exposed. Existing
+attachments are bounded in aggregate by the decoded-bytes ceiling. The public
+header inspector neither authenticates
 the database nor validates decrypted data. It must not be treated as an unlock
 authorization or whole-file validator.
 
