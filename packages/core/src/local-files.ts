@@ -223,6 +223,11 @@ async function assertRevision(path: string, expected: FileRevision | null): Prom
 async function windowsPermissions(source: string | undefined, destination: string): Promise<void> {
   const root = process.env.SystemRoot;
   if (!root) throw new DatabaseError("IO", "Windows permission services are unavailable.");
+  const home = join(root, "System32", "WindowsPowerShell", "v1.0");
+  // PowerShell 7's inherited module paths are incompatible with this Windows PowerShell 5.1 host.
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => name.toUpperCase() !== "PSMODULEPATH"),
+  );
   const script = source
     ? "$acl = Get-Acl -LiteralPath $env:KDBX_ACL_SOURCE; Set-Acl -LiteralPath $env:KDBX_ACL_DESTINATION -AclObject $acl"
     : "$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User; " +
@@ -231,10 +236,15 @@ async function windowsPermissions(source: string | undefined, destination: strin
       "$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, 'FullControl', 'Allow'); " +
       "$acl.AddAccessRule($rule); Set-Acl -LiteralPath $env:KDBX_ACL_DESTINATION -AclObject $acl";
   await execute(
-    join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    join(home, "powershell.exe"),
     ["-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference = 'Stop'; ${script}`],
     {
-      env: { ...process.env, KDBX_ACL_SOURCE: source ?? "", KDBX_ACL_DESTINATION: destination },
+      env: {
+        ...environment,
+        PSModulePath: join(home, "Modules"),
+        KDBX_ACL_SOURCE: source ?? "",
+        KDBX_ACL_DESTINATION: destination,
+      },
       windowsHide: true,
       timeout: 30_000,
     },

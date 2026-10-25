@@ -470,6 +470,25 @@ handoff. Hands-on installed interactive acceptance, new Linux/macOS CI,
 accessibility, independent security review and release preparation remain gates;
 the passing automated checks do not approve production secret storage.
 
+## Windows CI module-path regression
+
+The Windows Node 22/24 validation failures exposed a host-environment issue:
+Windows PowerShell 5.1 inherited `PSModulePath` from the runner's PowerShell 7
+shell and could not load `Microsoft.PowerShell.Security`. The resulting ACL
+failures blocked encrypted writes and cascaded into save, recovery and shutdown
+failures; permission checks must not be bypassed.
+
+The ACL subprocess now receives only its own Windows PowerShell installation's
+built-in module directory, removing inherited module-path keys case-insensitively.
+The independent test ACL verifier uses the same module-directory isolation.
+Regression cases inject an incompatible PowerShell 7 security-module manifest
+and exercise both replacement with permission preservation and owner-only new
+file creation. Both cases fail before the fix and pass afterward.
+
+Local Windows verification: `pnpm check` passes **249 tests**, with one POSIX-only
+test skipped, and `pnpm package` rebuilds the VSIX successfully. Hosted CI must
+be rerun; these local results do not establish a passing hosted run.
+
 ## References
 
 - [Product specification](../spec.md)

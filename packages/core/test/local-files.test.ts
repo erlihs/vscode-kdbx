@@ -45,8 +45,12 @@ afterEach(async () => {
 async function acl(path: string, checkOwnerOnly = false): Promise<string> {
   const system = process.env.SystemRoot;
   if (!system) throw new Error("Windows permission services unavailable in test.");
+  const home = join(system, "System32", "WindowsPowerShell", "v1.0");
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => name.toUpperCase() !== "PSMODULEPATH"),
+  );
   const { stdout } = await promisify(execFile)(
-    join(system, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    join(home, "powershell.exe"),
     [
       "-NoProfile",
       "-NonInteractive",
@@ -58,7 +62,10 @@ async function acl(path: string, checkOwnerOnly = false): Promise<string> {
             "@{Name='Rules';Expression={@($_.Access | Select-Object IdentityReference,FileSystemRights," +
             "AccessControlType,IsInherited,InheritanceFlags,PropagationFlags)}} | ConvertTo-Json -Depth 5 -Compress"),
     ],
-    { env: { ...process.env, KDBX_TEST_ACL: path }, windowsHide: true },
+    {
+      env: { ...environment, PSModulePath: join(home, "Modules"), KDBX_TEST_ACL: path },
+      windowsHide: true,
+    },
   );
   return stdout.trim();
 }
@@ -94,6 +101,38 @@ describe("encrypted filesystem transactions", () => {
     if (process.platform === "win32") expect(await acl(destination, true)).toBe("True");
     else expect((await fs.stat(destination)).mode & 0o777).toBe(0o600);
   });
+
+  it.runIf(process.platform === "win32").each(["replace", "create"])(
+    "isolates Windows ACL modules from an incompatible inherited PSModulePath during %s",
+    async (operation) => {
+      const before = await readEncryptedFile(path);
+      const permissions = await acl(path);
+      const modules = join(root, "foreign-modules");
+      const security = join(modules, "Microsoft.PowerShell.Security");
+      await fs.mkdir(security, { recursive: true });
+      await fs.writeFile(
+        join(security, "Microsoft.PowerShell.Security.psd1"),
+        "@{ ModuleVersion = '99.0.0'; PowerShellVersion = '7.0'; " +
+          "GUID = 'e9600bb5-1c59-4489-b717-230930b036fe'; " +
+          "CmdletsToExport = @('Get-Acl', 'Set-Acl') }",
+      );
+      const system = process.env.SystemRoot;
+      if (!system) throw new Error("Windows permission services unavailable in test.");
+      vi.stubEnv(
+        "PSModulePath",
+        `${modules};${join(system, "System32", "WindowsPowerShell", "v1.0", "Modules")}`,
+      );
+      const destination = operation === "replace" ? path : join(root, "private.kdbx");
+      await writeEncryptedFile(
+        destination,
+        replacement,
+        operation === "replace" ? before.revision : null,
+      );
+      expect(await fs.readFile(destination)).toEqual(Buffer.from(replacement));
+      if (operation === "replace") expect(await acl(destination)).toBe(permissions);
+      else expect(await acl(destination, true)).toBe("True");
+    },
+  );
 
   it("retains the original if permissions cannot be preserved", async () => {
     const before = await readEncryptedFile(path);

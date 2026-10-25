@@ -224,7 +224,7 @@ error requiring reconciliation or Save As, not a success result. A crash or
 cleanup failure can leave encrypted staging/recovery files; changing a password
 cannot revoke those older copies.
 
-Local Windows validation for this increment: **247 tests pass**, with one
+Local Windows validation for this increment: **249 tests pass**, with one
 POSIX-only permission test skipped; type/lint/format checks, all 12 compatibility
 cases and the production dependency audit pass. The final VSIX passes on
 VS Code **1.101.0 and 1.143.1**, in both trusted and genuinely Restricted Mode
