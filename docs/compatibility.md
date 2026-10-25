@@ -257,11 +257,15 @@ needed more than 2 GiB and were lowered. Ceiling-sized loads finish well inside 
 30-second worker deadline.
 
 **Responsiveness.** All key derivation, parsing and serialization run in a worker.
-In the VS Code self-test, a probe with the reference Argon2id cost (seven
-derivations, about 7 s) left the extension host's event loop delayed by at most
-13–15 ms, against the specification's 250 ms busy-feedback target; the smoke test
-fails above 250 ms. Cancellation and deadlines terminate the worker before
-resolving (tested).
+The VS Code self-test waits for startup to settle, measures the extension host's
+idle event-loop delay as a baseline, then measures it per case. With the reference
+Argon2id cost (seven derivations, 6–10 s), the host stayed at its idle baseline:
+2–14 ms on Windows, Linux and macOS stable, and 76 ms on macOS with VS Code 1.101.0,
+whose idle baseline was 77 ms, so that delay is VS Code's own. The specification's
+busy-feedback target is 250 ms, and the smoke test fails above it. A first CI run
+without the settle period showed up to 210 ms on macOS, caused by VS Code startup
+work overlapping the first cases. Cancellation and deadlines terminate the worker
+before resolving (tested).
 
 ## VS Code host and VSIX packaging
 
@@ -275,16 +279,20 @@ files and the manifest, with no native addons and no runtime dependencies.
 `pnpm smoke` packages the VSIX, downloads VS Code, installs the VSIX into an
 isolated extensions directory, runs the self-test through a separate harness
 extension, verifies the extension was loaded from the installed VSIX, and requires
-all 13 cases to pass with at most 250 ms of extension-host lag.
+all 13 cases to pass with at most 250 ms of extension-host lag while they run.
 
-| VS Code        | Electron | Node    | Result (Windows, local) |
-| -------------- | -------- | ------- | ----------------------- |
-| 1.101.0        | 35.5.1   | 22.15.1 | 13/13, max lag 13 ms    |
-| 1.143.1 stable | 43.7.7   | 24.21.0 | 13/13, max lag 15 ms    |
+Results from CI's `vscode-smoke` job
+([run 11](https://github.com/erlihs/vscode-kdbx/actions/runs/40202491157)); all
+13 cases passed everywhere. Lag is shown as idle baseline / maximum while the
+self-test workers ran:
 
-CI's `vscode-smoke` job repeats this on Windows, macOS and Linux (under Xvfb) for
-both versions. **Minimum VS Code version: 1.101.0**, the first release whose
-bundled Node (22) matches the core's Node 22 requirement.
+| VS Code (Electron, Node)         | Windows x64 | Linux x64 (Xvfb) | macOS arm64 |
+| -------------------------------- | ----------- | ---------------- | ----------- |
+| 1.101.0 (35.5.1, 22.15.1)        | 2 / 2 ms    | 1 / 2 ms         | 77 / 77 ms  |
+| 1.143.1 stable (43.7.7, 24.21.0) | 22 / 2 ms   | 2 / 11 ms        | 27 / 14 ms  |
+
+**Minimum VS Code version: 1.101.0**, the first release whose bundled Node (22)
+matches the core's Node 22 requirement.
 
 ## Experimental limits
 

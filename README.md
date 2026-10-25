@@ -88,9 +88,9 @@ Every Phase 1 gate requirement is met with recorded evidence:
   allocation, including under concurrent loads.
 - **Defaults and performance:** new-database KDF settings, XML ceilings and the
   worker heap are calibrated on a documented reference machine; real-cost key
-  derivation delays the VS Code extension host by at most 15 ms.
+  derivation leaves the VS Code extension host at its idle responsiveness.
 - **Packaging:** the packaged VSIX passes its self-test in the extension host of
-  VS Code 1.101.0 and stable.
+  VS Code 1.101.0 and stable on Windows, macOS and Linux.
 
 See [the compatibility assessment](docs/compatibility.md) for the evidence.
 
