@@ -502,8 +502,31 @@ timeout without identifying the blocked operation. This is unresolved, not a
 passing gate. The harness now logs and bounds activation, editor commands,
 worker requests and the compatibility probe; failed CI runs retain VS Code logs
 as artifacts before deleting their temporary synthetic profiles. The updated
-harness passes locally on Windows / VS Code 1.101.0 in both trust modes, but a
-macOS rerun is required to identify or reproduce the stall.
+harness passed locally on Windows / VS Code 1.101.0 in both trust modes.
+
+The subsequent [CI run](https://github.com/erlihs/vscode-kdbx/actions/runs/40217952565)
+passed the macOS trusted window, editor lifecycle and packaged session round trip,
+then hit the Restricted Mode compatibility self-test's 60-second deadline.
+That deadline was shorter than a single probe's 120-second allowance. The smoke
+now allows 150 seconds for the self-test and 330 seconds for each VS Code process,
+covering startup and the editor/session deadlines as well. Quiet programmatic
+self-tests run without notification UI, and each synthetic case logs its start
+and result so any remaining stall identifies the active case. The 13-case matrix
+and 250 ms event-loop-lag gate are unchanged. A hosted macOS rerun is still needed;
+the saved logs do not establish why that self-test stalled.
+
+The same run also failed to connect to `keepass.info` while downloading KPScript.
+KeePass/KPScript downloads now use bounded curl retries (including connection
+errors) and check curl's exit code before hashing or extraction. Both pinned
+SHA-256 checks remain mandatory; an exhausted download fails explicitly rather
+than reporting a missing ZIP.
+
+Local verification of these changes: both real archives downloaded, matched their
+pinned hashes and extracted successfully; a simulated curl connection failure
+stopped before hashing. The five command regression tests, type checking, lint
+and changed-file formatting checks passed. Packaged Windows smoke passed all
+13 cases in both trust modes on VS Code 1.101.0 and 1.143.1. These results do not
+establish a passing hosted macOS run.
 
 ## References
 

@@ -212,7 +212,8 @@ exports.run = async () => {
       vscode.commands.executeCommand("kdbx.compatibilitySelfTest", {
         quiet: true,
       }),
-    60_000,
+    // A single compatibility worker is allowed 120 seconds, including the real-cost KDF.
+    150_000,
   );
   writeFileSync(
     process.env.KDBX_REPORT,

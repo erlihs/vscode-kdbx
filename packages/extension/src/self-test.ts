@@ -76,6 +76,7 @@ export async function runSelfTest(vscodeVersion: string): Promise<SelfTestReport
         `${fixture.cipher}/${fixture.kdf}/${fixture.compression}` +
         (fixture.argon2 ? " (reference KDF cost)" : "");
       const start = performance.now();
+      console.log(`[kdbx self-test] Starting: ${name}`);
       try {
         const report = await runCompatibilityProbe(fixture, { timeoutMs: 120_000 });
         const ok =
@@ -84,6 +85,7 @@ export async function runSelfTest(vscodeVersion: string): Promise<SelfTestReport
           report.unknownDataRefused &&
           report.header.version === "4.1";
         cases.push({ name, ok, ms: Math.round(performance.now() - start), lagMs: lag.take() });
+        console.log(`[kdbx self-test] ${ok ? "Passed" : "Failed"}: ${name}`);
       } catch (error) {
         cases.push({
           name,
@@ -92,6 +94,7 @@ export async function runSelfTest(vscodeVersion: string): Promise<SelfTestReport
           lagMs: lag.take(),
           detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
         });
+        console.error(`[kdbx self-test] Failed: ${name}: ${cases[cases.length - 1]?.detail}`);
       }
     }
   } finally {

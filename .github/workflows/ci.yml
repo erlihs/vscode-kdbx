@@ -97,7 +97,8 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           foreach ($name in 'KEEPASS', 'KPSCRIPT') {
             $zip = Join-Path $dir "$name.zip"
-            curl.exe -fsSL -o $zip ([Environment]::GetEnvironmentVariable("${name}_URL"))
+            curl.exe --fail --silent --show-error --location --retry 4 --retry-all-errors --retry-delay 3 --connect-timeout 15 --max-time 60 -o $zip ([Environment]::GetEnvironmentVariable("${name}_URL"))
+            if ($LASTEXITCODE -ne 0) { throw "$name download failed (curl exit code $LASTEXITCODE)" }
             $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
             if ($hash -ne [Environment]::GetEnvironmentVariable("${name}_SHA256")) { throw "$name hash mismatch" }
             Expand-Archive -Force $zip (Join-Path $dir app)

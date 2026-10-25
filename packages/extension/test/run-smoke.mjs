@@ -80,7 +80,8 @@ try {
       ],
       {
         stdio: "inherit",
-        timeout: 180_000,
+        // Covers startup, editor (90 s), session (60 s) and compatibility (150 s) steps.
+        timeout: 330_000,
         env: {
           ...process.env,
           KDBX_REPORT: reportPath,
