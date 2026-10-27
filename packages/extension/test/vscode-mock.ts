@@ -120,6 +120,7 @@ export const controls = {
 export const env = {
   uiKind: UIKind.Desktop,
   remoteName: undefined as string | undefined,
+  openExternal: vi.fn(async (_uri: VSCode.Uri): Promise<boolean> => true),
   clipboard: {
     writeText: vi.fn(async (text: string) => {
       controls.clipboard = text;

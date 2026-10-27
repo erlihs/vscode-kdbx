@@ -100,4 +100,14 @@ describe("editor boundary services", () => {
     ).toBe(false);
     expect(isUiState({ locked: true, password: "invalid state" })).toBe(false);
   });
+  it("only accepts an entry ID for website opening, never a webview-supplied URL", () => {
+    const request = { channel: "own", id: 1, action: { kind: "openUrl", id: "entry" } };
+    expect(isEditorRequest(request, "own")).toBe(true);
+    expect(
+      isEditorRequest(
+        { ...request, action: { ...request.action, url: "https://example.invalid" } },
+        "own",
+      ),
+    ).toBe(false);
+  });
 });

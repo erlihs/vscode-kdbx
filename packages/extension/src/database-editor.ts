@@ -593,6 +593,27 @@ export class DatabaseEditorProvider
       case "copy":
         await this.copy(await session.readField(action.id, action.name));
         return;
+      case "openUrl": {
+        const value = await session.readField(action.id, "URL");
+        let url: URL;
+        try {
+          url = new URL(value);
+        } catch {
+          throw new DatabaseError(
+            "INVALID_INPUT",
+            "This entry does not contain a valid website URL.",
+          );
+        }
+        if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
+          throw new DatabaseError(
+            "INVALID_INPUT",
+            "Only HTTP and HTTPS websites without embedded credentials can be opened.",
+          );
+        if (!(await this.confirm(`Open this website in your browser?\n${url.href}`))) return;
+        if (!(await vscode.env.openExternal(vscode.Uri.parse(url.href))))
+          throw new DatabaseError("INVALID_INPUT", "The website could not be opened.");
+        return;
+      }
       case "generate":
         return generatePassword(action);
       case "exportAttachment":

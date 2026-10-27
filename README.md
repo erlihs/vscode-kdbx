@@ -49,6 +49,9 @@ stable. Line endings are pinned to LF by `.gitattributes`.
 Vite is supplied transitively by Vitest. The dependency-free webview is bundled
 with the extension's existing esbuild pipeline; no additional frontend framework
 or build tool is needed.
+Webview interaction regressions run in Vitest with Happy DOM (test-only).
+The unlock screen uses a themed, keyboard-focused card with a masked master
+password input and an explicit cancellation action while unlocking.
 
 ## Local testing
 
@@ -91,6 +94,8 @@ Use synthetic databases only. A Windows pass does not establish a macOS/Linux pa
   There is no attachment preview, execution or automatic opening.
 - Cryptographically random password generation, explicit reveal/copy and
   clipboard clearing after 30 seconds if the clipboard still contains our copy.
+  Website opening requires confirmation in VS Code and permits only HTTP(S)
+  URLs without embedded credentials; entry URLs cannot execute VS Code commands.
 - Database-access restrictions for Restricted Mode, browser/remote extension
   hosts, remote/virtual workspaces, non-file URIs and network-share authorities.
   The extension requests local UI-host placement. Granting workspace trust refreshes
@@ -163,11 +168,19 @@ See [the compatibility assessment](docs/compatibility.md) for the evidence.
    `packages/extension/dist/kdbx.vsix`.
 3. Open a synthetic `.kdbx` file from Explorer and unlock it, or run
    **KeePass: Create Database** in the Command Palette.
-4. Create a group or entry. Entry detail forms use **Apply**: apply a form before
-   saving the database with normal VS Code Save.
-5. Try history, attachments, password generation, reveal/copy and locking.
+4. Browse groups, select an entry, and copy or briefly reveal credentials.
+   Search matches titles, usernames, URLs, tags and group paths across all groups;
+   protected fields and notes are never searched.
+5. Use **+** to create a group or entry. Choose **Edit** to change an entry,
+   **Done** to keep changes, or **Cancel** / Escape to discard the edit.
+   Ctrl+S (Cmd+S on macOS) inside the webview finishes the edit and saves the
+   encrypted database. Normal VS Code Save persists finished changes.
+6. Group and entry **…** menus (also available by right-click) contain move,
+   duplicate and deletion actions. **More database actions** contains Save As,
+   undo/redo, revert and master-password changes. Attachments and history expand
+   on demand; the password generator is available while editing.
    **KeePass: Lock All Databases** locks all sessions in this extension host.
-6. Use **Reopen Editor With** to select another editor if needed.
+7. Use **Reopen Editor With** to select another editor if needed.
 
 Restricted Mode displays an explanation rather than offering a trust bypass.
 Remote and virtual workspaces are unsupported, including local databases opened
@@ -176,8 +189,13 @@ databases read-only rather than risking a lossy save.
 
 Important preview behavior:
 
-- **Apply commits forms to the in-memory database; Save persists encryption.**
-  Visible, unapplied drafts are not included in native backups/hot exit.
+- Browsing is read-only. **Done** finishes an edit and marks the VS Code document
+  dirty; **Save** persists encryption. Ctrl+S / Cmd+S in the webview does both.
+  Unfinished edits are local to the view, are not included in native backups/hot
+  exit, and are erased when the view is hidden, deactivated or locked. Navigation
+  prompts you to finish or discard a changed edit first.
+- Ctrl+F / Cmd+F focuses entry search. Ctrl+Z / Cmd+Z and Ctrl+Y / Cmd+Shift+Z
+  undo/redo database edits while browsing; text inputs retain native text undo.
 - Undo/redo is worker-only, bounded to 100 edits / 64 MiB of accounted edit data,
   and ends at lock/recovery. Native callbacks from the previous unlock are
   rejected. KeePass entry history persists independently.

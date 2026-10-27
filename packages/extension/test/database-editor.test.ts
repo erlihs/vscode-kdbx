@@ -102,6 +102,48 @@ afterEach(async () => {
 });
 
 describe("writable database custom document", () => {
+  it("opens only explicitly confirmed HTTP(S) entry URLs and reports launch failures", async () => {
+    const view = bind(document);
+    const unlocked = await request(view, { kind: "unlock", password: SYNTHETIC_PASSWORD });
+    const created = await request(view, {
+      kind: "createEntry",
+      groupId: unlocked.state.groups[0]!.id,
+      title: "Website",
+    });
+    expect(typeof created.result).toBe("string");
+    const id = String(created.result);
+    const setUrl = (value: string) =>
+      request(view, {
+        kind: "updateEntry",
+        id,
+        fields: { URL: { value, protected: false } },
+        removeFields: [],
+        tags: [],
+        groupId: unlocked.state.groups[0]!.id,
+      });
+    for (const value of [
+      "command:workbench.action.files.save",
+      "file:///private.txt",
+      "javascript:alert(1)",
+      "https://user:password@example.invalid",
+      "not a URL",
+    ]) {
+      await setUrl(value);
+      expect((await request(view, { kind: "openUrl", id })).ok).toBe(false);
+    }
+    expect(env.openExternal).not.toHaveBeenCalled();
+    await setUrl("https://example.invalid");
+    expect((await request(view, { kind: "openUrl", id })).ok).toBe(true);
+    expect(env.openExternal).not.toHaveBeenCalled();
+    window.showWarningMessage.mockResolvedValue("Continue");
+    expect((await request(view, { kind: "openUrl", id })).ok).toBe(true);
+    expect(env.openExternal).toHaveBeenCalledTimes(1);
+    env.openExternal.mockResolvedValueOnce(false);
+    const failed = await request(view, { kind: "openUrl", id });
+    expect(failed.ok).toBe(false);
+    expect(failed.state.error).toContain("could not be opened");
+  });
+
   it("unlocks two shared views, edits, undoes/redoes and saves encrypted data", async () => {
     const first = bind(document);
     const second = bind(document);

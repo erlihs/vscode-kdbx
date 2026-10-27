@@ -21,7 +21,7 @@ export type EditorAction =
   | { kind: "moveGroup"; id: string; parentId: string }
   | { kind: "deleteGroup"; id: string; permanent: boolean }
   | { kind: "createEntry"; groupId: string; title: string }
-  | { kind: "details" | "duplicateEntry" | "history" | "importAttachment"; id: string }
+  | { kind: "details" | "duplicateEntry" | "history" | "importAttachment" | "openUrl"; id: string }
   | {
       kind: "updateEntry";
       id: string;
@@ -149,6 +149,7 @@ export function isEditorRequest(value: unknown, channel: string): value is Edito
     case "duplicateEntry":
     case "history":
     case "importAttachment":
+    case "openUrl":
       return keys(action, ["kind", "id"]) && text(action.id);
     case "updateEntry":
       return (
