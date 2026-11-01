@@ -2,13 +2,16 @@
 
 ## 0.1.0
 
-- Prepare the initial Marketplace package as **KDBX for VS Code**
-  (`erlihs.vscode-kdbx`), replacing the development identity `erlihs.kdbx`.
-- Include Marketplace documentation, an original icon, the MIT license and
-  bundled dependency legal notices.
-- Provide the existing local KDBX editor with group and entry management,
-  password generation, attachments, history, locking and encrypted recovery.
-- Preserve `kdbx.*` command IDs, the custom editor type and settings.
+Initial preview release of **KDBX for VS Code**.
 
-The interactive editor remains an early release without release or independent
-security approval. Use synthetic databases only; see the README for limitations.
+- Open and edit KDBX 4.0 and 4.1 databases.
+- Create KDBX 4.1 databases.
+- Manage groups, entries, custom fields, notes, history and attachments.
+- Password generation, reveal/copy and clipboard clearing.
+- VS Code Save, Save As and undo/redo integration.
+- Automatic and manual locking.
+- Encrypted crash/dirty-session recovery.
+- KeePass and KeePassXC interoperability testing.
+
+This is an early preview. Keep independent backups and review the documented
+limitations and security model before using important databases.

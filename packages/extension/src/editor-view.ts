@@ -41,7 +41,7 @@ export function lockedEditorHtml(filename: string, restriction: string | undefin
   const heading = restriction ? "Database access unavailable" : "Database locked";
   const detail =
     restriction ??
-    "This preview provides a locked, read-only database editor. Unlocking and editing are not available yet; no password is requested or stored.";
+    "This database is locked. Open it with KDBX for VS Code in a supported local desktop window to unlock, browse, and edit its contents.";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

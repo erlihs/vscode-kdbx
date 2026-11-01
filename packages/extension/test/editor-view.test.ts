@@ -37,13 +37,25 @@ describe("database editor environment admission", () => {
 });
 
 describe("locked database view", () => {
-  it("shows the filename and honest locked/read-only state without credential controls", () => {
+  it("shows the filename and directs unlocking to a supported window without credential controls", () => {
     const html = lockedEditorHtml("synthetic.kdbx", undefined);
     expect(html).toContain("Database locked");
     expect(html).toContain("synthetic.kdbx");
-    expect(html).toContain("no password is requested or stored");
+    expect(html).toContain(
+      "This database is locked. Open it with KDBX for VS Code in a supported local desktop window to unlock, browse, and edit its contents.",
+    );
+    expect(html).not.toContain("Unlocking and editing are not available yet");
     expect(html).toContain("has not been read, decrypted, or modified");
     expect(html).toContain("Reopen Editor With");
+    expect(html).not.toMatch(/<(input|form|script|iframe)\b/i);
+  });
+
+  it("shows the access restriction instead of suggesting unlocking", () => {
+    const restriction = editorRestriction(local, { ...supported, trusted: false });
+    const html = lockedEditorHtml("synthetic.kdbx", restriction);
+    expect(html).toContain("Database access unavailable");
+    expect(html).toContain(restriction);
+    expect(html).not.toContain("to unlock, browse, and edit");
     expect(html).not.toMatch(/<(input|form|script|iframe)\b/i);
   });
 
