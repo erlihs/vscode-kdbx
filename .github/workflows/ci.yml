@@ -41,12 +41,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm package
+      - run: pnpm --filter ./packages/extension exec vsce ls --no-dependencies
       - if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm --filter kdbx smoke
+        run: xvfb-run -a pnpm --filter ./packages/extension smoke
         env:
           KDBX_SMOKE_DIAGNOSTICS: ${{ runner.temp }}/kdbx-smoke-diagnostics
       - if: runner.os != 'Linux'
-        run: pnpm --filter kdbx smoke
+        run: pnpm --filter ./packages/extension smoke
         env:
           KDBX_SMOKE_DIAGNOSTICS: ${{ runner.temp }}/kdbx-smoke-diagnostics
       - uses: actions/upload-artifact@v4

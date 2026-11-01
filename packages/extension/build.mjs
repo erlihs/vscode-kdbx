@@ -1,5 +1,21 @@
 // Bundles the editor and probe worker with their runtime dependencies and WASM.
 import { build } from "esbuild";
+import { copyFile, mkdir, readdir } from "node:fs/promises";
+
+for (const filename of ["README.md", "SECURITY.md", "LICENSE"]) {
+  await copyFile(
+    new URL(`../../${filename}`, import.meta.url),
+    new URL(`./${filename}`, import.meta.url),
+  );
+}
+const screenshots = new URL("../../docs/images/", import.meta.url);
+const packagedScreenshots = new URL("./docs/images/", import.meta.url);
+await mkdir(packagedScreenshots, { recursive: true });
+for (const filename of await readdir(screenshots)) {
+  if (filename.endsWith(".png")) {
+    await copyFile(new URL(filename, screenshots), new URL(filename, packagedScreenshots));
+  }
+}
 
 const shared = {
   bundle: true,

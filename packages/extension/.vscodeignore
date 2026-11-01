@@ -1,4 +1,10 @@
 **
+!README.md
+!SECURITY.md
+!docs/images/*.png
+!CHANGELOG.md
+!LICENSE
+!images/icon.png
 !dist/extension.js
 !dist/probe-worker.js
 !dist/session-worker.js

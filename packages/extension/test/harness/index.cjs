@@ -192,7 +192,7 @@ async function checkEditor(extension) {
 }
 
 exports.run = async () => {
-  const extension = vscode.extensions.getExtension("erlihs.kdbx");
+  const extension = vscode.extensions.getExtension("erlihs.vscode-kdbx");
   if (!extension) throw new Error("The packaged extension is not installed.");
   const fromInstall = relative(process.env.KDBX_EXTENSIONS_DIR, extension.extensionPath);
   if (fromInstall.startsWith("..") || isAbsolute(fromInstall)) {

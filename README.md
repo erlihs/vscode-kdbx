@@ -1,314 +1,126 @@
-# KeePass Database Manager for VS Code
+# KDBX for VS Code
 
-**Phase 1 was approved on 2026-10-25**, following compatibility, calibration and
-installed-VSIX verification. Implementation of [the product specification](spec.md)
-has moved to an **interactive editor preview**, backed by worker-only database
-sessions and encrypted recovery.
+Open and manage KeePass-compatible password databases directly in Visual Studio Code.
 
-The preview opens `.kdbx` files in a dedicated editor with an unlock form and
-group, entry, attachment and password-management workflows. It is **not release
-or security approved**; continue using synthetic data only.
+- KeePass / KeePassXC compatible
+- KDBX 4.0 and 4.1
+- Passwords, custom fields, notes and attachments
+- Local only - no cloud service or account
+- Encrypted recovery
+- Automatic locking and clipboard clearing
+- Open source
+
+![Unlock a database](docs/images/unlock.png)
+![Browse groups and entries](docs/images/browse.png)
+![Edit an entry and its attachments](docs/images/edit.png)
+
+## Features
+
+- Create databases, organize groups and entries, and search titles, usernames,
+  URLs, tags and group paths.
+- Manage protected custom fields, multiline notes, entry history and recycle-bin items.
+- Generate passwords, explicitly reveal or copy credentials, and change the master password.
+- Import and export attachments using native file pickers.
+- Use VS Code Save, Save As, undo/redo, split editors and encrypted recovery.
+
+This is an independent project, not an official KeePass or KeePassXC product.
+
+## Security model
+
+Databases are encrypted on disk. Unlocked database models and key material are
+held in local workers; the editor receives browsing data and explicitly requested
+secrets. Workers are not a security sandbox: plaintext also exists in the
+extension host and webview during input, editing, reveal and copy operations.
+
+Manual locking is always available. Automatic locking defaults to **5 minutes**
+without database interaction; `kdbx.idleLockMinutes` accepts 0-120, and **0 disables
+automatic locking**. Hiding the editor or losing window focus conceals visible secrets.
+Copied credentials are cleared after **30 seconds**, only if the clipboard still
+contains the extension's copy. Clipboard history is outside its control.
+
+Keep separate backups. Read [SECURITY.md](SECURITY.md) for the trust boundaries,
+recovery behavior and threat model.
+
+## Supported databases
+
+- Open and edit **KDBX 4.0 and 4.1**; create new **KDBX 4.1** databases.
+- Ciphers: **AES-256** and **ChaCha20**.
+- Key derivation: **Argon2id**, **Argon2d** and **AES-KDF**, within resource limits.
+- Authentication: **master password only**; key files and hardware tokens are not supported.
+
+Ordinary saves preserve the format, cipher and KDF. Edits requiring newer metadata,
+such as moves, upgrade KDBX 4.0 to 4.1. Databases containing data the editor cannot
+preserve open read-only rather than risking a lossy save. KeePass 1.x `.kdb` and
+KDBX 3.x are not supported.
+
+## Installation
+
+Requires **VS Code 1.101.0 or newer** on Windows, macOS or Linux, in a trusted
+local desktop window.
+
+Install **KDBX for VS Code** (`erlihs.vscode-kdbx`) from the Extensions view when
+available. For a locally built VSIX, run **Extensions: Install from VSIX** and
+select the package. See [development instructions](https://github.com/erlihs/vscode-kdbx/blob/HEAD/docs/technical.md#development-and-validation)
+to build it.
+
+## Usage
+
+1. Open a `.kdbx` file, or run **KDBX: Create Database** from the Command Palette.
+2. Unlock with its master password.
+3. Select a group and entry. Use **+** to create items, **Edit** to change an
+   entry, and **Done** to finish the edit.
+4. Save with Ctrl+S (Cmd+S on macOS). Inside the editor this finishes the active
+   edit and saves the encrypted database; normal VS Code Save persists finished changes.
+5. Run **KDBX: Lock Database** or **KDBX: Lock All Databases** when finished.
+
+Group and entry menus provide move, duplicate and delete actions.
+**More database actions** includes Save As, undo/redo, revert and master-password changes.
+
+## Limitations
+
+- This is a preview. Keep separate backups.
+- Trusted local desktop windows and local files only; no remote workspaces or network shares.
+- Finish and save edits before leaving the editor; unfinished drafts are not recovered.
+- Avoid concurrent editing in other apps or windows. Save As requires a new destination.
+- Attachment import is limited to **10 MiB**; export writes a **decrypted file**.
+
+## Privacy
+
+**KDBX for VS Code does not transmit your database, master password, or credentials
+to a server. Database operations are performed locally.**
+
+There is no extension telemetry, analytics, remote password service or automatic
+network request in the bundled runtime. Opening an entry's HTTP(S) website requires
+confirmation and sends that URL to your external browser; URLs can themselves
+contain sensitive information. No database or master password is added to the URL.
+VS Code, other extensions, your browser, clipboard managers and filesystem sync
+tools have their own privacy behavior. Installation, updates and development
+dependency downloads can use the network.
 
 ## Development
 
-Requires Node.js 22.12 or newer and pnpm 10.28.0 (pinned in
-`package.json`). With Corepack installed, `corepack enable` makes the pinned
-pnpm available.
+Requires Node.js 22.12+ and pnpm 10.28.0. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm check
-pnpm compatibility
+pnpm package
 ```
 
-- `pnpm build`: compile the UI-independent core with native TypeScript (`tsgo`).
-- `pnpm typecheck`: check source, tests, Vitest configuration and the extension.
-- `pnpm test`: build and run Vitest.
-- `pnpm lint`: run Oxlint.
-- `pnpm format` / `pnpm format:check`: write / check formatting with Oxfmt.
-- `pnpm compatibility`: run the synthetic cipher/KDF/compression matrix in
-  isolated Node workers and print a non-secret summary; exits unsuccessfully if
-  any case fails (`-- --require-gate` is accepted for compatibility).
-- `pnpm interop -- --app keepass|keepassxc`: cross-application round trip with
-  KeePass 2.x (`KPScript` on `PATH` or `$KPSCRIPT`) or KeePassXC (`keepassxc-cli`
-  on `PATH` or `$KEEPASSXC_CLI`); add `--write-fixtures` to refresh the committed
-  fixtures that application wrote.
-- `pnpm calibrate`: measure new-database Argon2id settings and the worker heap
-  needed at the XML ceilings on this machine (`-- --kdf` or `-- --heap` for one
-  part; the heap part takes several minutes and fails above 75% of the heap).
-- `pnpm package`: bundle the preview extension and build
-  `packages/extension/dist/kdbx.vsix`.
-- `pnpm smoke`: package, download VS Code (`VSCODE_VERSION`, default `stable`),
-  install the VSIX and test the locked editor and worker in trusted and Restricted
-  Mode windows.
+The root README is the single source for GitHub and the Marketplace; packaging
+copies it, the security policy and screenshot assets into the extension.
+See the [technical reference](https://github.com/erlihs/vscode-kdbx/blob/HEAD/docs/technical.md)
+for architecture, compatibility, validation and troubleshooting.
+Report non-security bugs in the [issue tracker](https://github.com/erlihs/vscode-kdbx/issues)
+using synthetic examples, never real databases or secrets.
 
-CI runs on Windows, macOS and Linux with Node 22 and 24. Separate jobs run the
-round trip against KeePass 2.61.1 (Windows) and the distribution's KeePassXC
-(Ubuntu), and the VSIX smoke test on all three systems with VS Code 1.101.0 and
-stable. Line endings are pinned to LF by `.gitattributes`.
-Vite is supplied transitively by Vitest. The dependency-free webview is bundled
-with the extension's existing esbuild pipeline; no additional frontend framework
-or build tool is needed.
-Webview interaction regressions run in Vitest with Happy DOM (test-only).
-The unlock screen uses a themed, keyboard-focused card with a masked master
-password input and an explicit cancellation action while unlocking.
+## Security reporting
 
-## Local testing
-
-From the repository root, run `pnpm check` for type/lint/format checks and tests.
-Run `pnpm compatibility` for the synthetic format matrix.
-
-To exercise the installed package in an isolated VS Code profile on Windows:
-
-```powershell
-$env:VSCODE_VERSION = "1.101.0" # Or "stable"
-pnpm smoke
-```
-
-This packages the extension, downloads the requested VS Code version and runs
-trusted and Restricted Mode smoke tests. It does not install into your normal
-profile. The smoke prints each operation as it starts and passes, with deadlines
-that name a stalled operation. CI uploads VS Code logs for failed smoke runs.
-These tests use synthetic data; they do not automate every interactive UI action.
-
-For hands-on testing, run `pnpm package`, install the resulting VSIX using
-**Extensions: Install from VSIX**, then follow the interactive-preview steps below.
-Use synthetic databases only. A Windows pass does not establish a macOS/Linux pass.
-
-## Current implementation
-
-- A writable binary custom editor associated with `.kdbx` files, native
-  dirty/save/Save As/revert/backup and undo/redo integration, shared split views
-  and VS Code's **Reopen Editor With** escape hatch.
-- A themed webview with a restrictive nonce CSP and validated, per-panel message
-  channels. Protected fields are omitted from ordinary detail responses;
-  plaintext reaches the UI only for explicit reveal or editing. Restricted
-  pages remain script-free and contain no credential form.
-- Calibrated KDBX 4.1 creation, cancellable unlock, master-password changes,
-  manual/idle locking, encrypted recovery selection and confirmed discard.
-- Hierarchical groups; entry creation/editing/moving/duplication; multiline
-  notes, protected custom fields, tags, search, entry history and recycle bin.
-- Native attachment import/export, rename and removal, with a 10 MiB import
-  limit. Export warns that the file is decrypted and requires confirmation
-  before overwrite; open databases and their hard links cannot be overwritten.
-  There is no attachment preview, execution or automatic opening.
-- Cryptographically random password generation, explicit reveal/copy and
-  clipboard clearing after 30 seconds if the clipboard still contains our copy.
-  Website opening requires confirmation in VS Code and permits only HTTP(S)
-  URLs without embedded credentials; entry URLs cannot execute VS Code commands.
-- Database-access restrictions for Restricted Mode, browser/remote extension
-  hosts, remote/virtual workspaces, non-file URIs and network-share authorities.
-  The extension requests local UI-host placement. Granting workspace trust refreshes
-  an open restriction page; it does not unlock anything.
-- pnpm workspace, strict TypeScript, native type checking, Ox tools and CI.
-- KDBX 4.0 and 4.1 opening/editing; ordinary edits preserve the format and KDF.
-  Edits requiring 4.1 metadata (such as moves) upgrade 4.0 files to 4.1, matching
-  KeePassXC. New databases still use 4.1.
-- Bounded, unauthenticated KDBX 4.0/4.1 header inspection, with explicit unsupported
-  version/cipher/KDF errors and resource admission ceilings.
-- Evaluation of a maintained KdbxWeb fork with an explicitly supplied XML parser
-  and WASM Argon2d/Argon2id implementation.
-- Synthetic AES-256/ChaCha20 × Argon2id/Argon2d/AES-KDF × compressed/uncompressed
-  creation, edit, save and reopen checks.
-- Preservation checks for protected fields, history, binary/empty attachments,
-  UUIDs, tags, timestamps, recycle-bin references, deletion records and custom
-  metadata, plus tampering, cancellation and exact header/KDF limit boundaries.
-- A worker-internal load/save adapter that opens databases read-only when saving
-  would drop unmodeled XML or header data, plus a reviewed local patch of the
-  candidate (`patches/`). Only the writer-name text of `Meta/Generator` is exempt
-  from that check; unknown attributes or children there still force read-only.
-- A UI-independent shared-session service: canonical local paths share a persistent
-  worker, with serialized edits, password changes, saves and locks. Decrypted
-  databases and credentials remain in that worker.
-- Conflict-aware encrypted persistence: an adjacent exclusive staging file,
-  permission preservation, flush/close, fingerprint recheck and verified replacement.
-  Save As creates a new encrypted destination without changing the source.
-- Encrypted KDBX recovery before dirty lock/close. Failed backup retains the dirty
-  worker; recovered contents and KeePass entry history survive restart. Password
-  changes make recovery require the **new** password while the saved original
-  still requires the old password until Save succeeds.
-- Bounded decoded loading: streaming decompression against a per-load budget
-  (captured when the load starts, shared by the payload and every compressed XML
-  binary, never shared between concurrent loads) and an XML pre-scan (size,
-  elements, depth, no DTDs) before any DOM is built.
-- Cross-application round trips with KeePass 2.x and KeePassXC, with the files
-  they wrote committed as independent fixtures.
-- Calibrated defaults: new databases get Argon2id tuned to about one second above
-  a 64 MiB floor (128 MiB × 7 iterations on the reference machine), and the XML
-  ceilings (500,000 elements, 32 Mi characters) are measured to fit within 55% of
-  the 2 GiB worker heap.
-- A preview extension (`packages/extension`) bundled into a VSIX whose
-  self-test runs the probe inside the VS Code extension host. Minimum VS Code
-  version: 1.101.0.
-
-## Phase 1 gate: approved
-
-Every Phase 1 gate requirement is met with recorded evidence:
-
-- **Interoperability:** independent round trips with KeePass 2.61.1 and KeePassXC
-  2.7/2.8 pass in both directions for every cipher/KDF/compression case.
-- **No silent data loss:** databases with data the candidate cannot save (unknown
-  XML or header fields) open read-only; empty protected fields keep their flag.
-- **Cryptographic dependencies:** Argon2 1.0 files (never written by KeePass or
-  KeePassXC) are refused before key derivation.
-- **Resource limits:** decoded data is admitted against per-load ceilings before
-  allocation, including under concurrent loads.
-- **Defaults and performance:** new-database KDF settings, XML ceilings and the
-  worker heap are calibrated on a documented reference machine; real-cost key
-  derivation leaves the VS Code extension host at its idle responsiveness.
-- **Packaging:** the packaged VSIX passes its self-test in the extension host of
-  VS Code 1.101.0 and stable on Windows, macOS and Linux.
-
-See [the compatibility assessment](docs/compatibility.md) for the evidence.
-
-## Trying the interactive preview
-
-1. Run `pnpm package`.
-2. Use **Extensions: Install from VSIX** and select
-   `packages/extension/dist/kdbx.vsix`.
-3. Open a synthetic `.kdbx` file from Explorer and unlock it, or run
-   **KeePass: Create Database** in the Command Palette.
-4. Browse groups, select an entry, and copy or briefly reveal credentials.
-   Search matches titles, usernames, URLs, tags and group paths across all groups;
-   protected fields and notes are never searched.
-5. Use **+** to create a group or entry. Choose **Edit** to change an entry,
-   **Done** to keep changes, or **Cancel** / Escape to discard the edit.
-   Ctrl+S (Cmd+S on macOS) inside the webview finishes the edit and saves the
-   encrypted database. Normal VS Code Save persists finished changes.
-6. Group and entry **…** menus (also available by right-click) contain move,
-   duplicate and deletion actions. **More database actions** contains Save As,
-   undo/redo, revert and master-password changes. Attachments and history expand
-   on demand; the password generator is available while editing.
-   **KeePass: Lock All Databases** locks all sessions in this extension host.
-7. Use **Reopen Editor With** to select another editor if needed.
-
-Restricted Mode displays an explanation rather than offering a trust bypass.
-Remote and virtual workspaces are unsupported, including local databases opened
-from those windows. Unknown-data preservation restrictions make affected
-databases read-only rather than risking a lossy save.
-
-Important preview behavior:
-
-- Browsing is read-only. **Done** finishes an edit and marks the VS Code document
-  dirty; **Save** persists encryption. Ctrl+S / Cmd+S in the webview does both.
-  Unfinished edits are local to the view, are not included in native backups/hot
-  exit, and are erased when the view is hidden, deactivated or locked. Navigation
-  prompts you to finish or discard a changed edit first.
-- Ctrl+F / Cmd+F focuses entry search. Ctrl+Z / Cmd+Z and Ctrl+Y / Cmd+Shift+Z
-  undo/redo database edits while browsing; text inputs retain native text undo.
-- Undo/redo is worker-only, bounded to 100 edits / 64 MiB of accounted edit data,
-  and ends at lock/recovery. Native callbacks from the previous unlock are
-  rejected. KeePass entry history persists independently.
-- Same-URI split views share edits. Different URI aliases of the same canonical
-  file are read-only except the original primary URI, avoiding divergent native
-  undo stacks.
-- Idle lock defaults to five minutes without database interaction.
-  `kdbx.idleLockMinutes` accepts 0–120; **0 explicitly disables idle locking**.
-  Hiding a panel or losing window focus conceals visible secrets.
-- Dirty lock/close encrypts recovery first. Backup failure is an error and keeps
-  the dirty worker available; do not assume failed recovery is on disk.
-- Save As currently requires a **new** destination. Concurrent editing from
-  other applications/windows and network/mapped filesystems remain unsupported.
-
-## Core session/persistence API
-
-This foundation is **not connected to the read-only editor yet**. A future local,
-trusted custom-document provider should own one `DatabaseSessions` registry per
-host, rooted in private application recovery storage, not the workspace:
-
-```ts
-import { DatabaseSessions } from "@vscode-kdbx/core";
-
-const sessions = await DatabaseSessions.create(privateRecoveryDirectory);
-const snapshots = await sessions.findRecovery(databasePath);
-// Existing snapshots require explicit selection or discard; never silently ignore them.
-const document = await sessions.open(databasePath, selectedRecovery);
-await document.unlock(password, abortSignal);
-await document.createEntry("Example");
-await document.save();
-await sessions.close(document);
-```
-
-`state` exposes locked/dirty/read-only/conflict/credential-change status, explicit
-source-access/admission issues and an opaque recovery reference. `listEntries()`
-returns explicit summaries without protected plaintext. Group/entry CRUD,
-history, attachments, undo/redo and masked `getEntry()` details are available;
-`readField()` is an explicit plaintext read. Other operations include
-`changeMasterPassword(newPassword, confirmation)`, `saveAs()`, `backup()`, `lock()`
-and explicit `discardAndLock()`. Invalid XML field characters and edits exceeding
-the actual escaped XML/decoded-size limits (including entry history and protected
-ciphertext) are refused without retaining the failed edit. Valid carriage returns,
-line endings, Unicode and XML metacharacters survive save/reopen unchanged.
-
-- Unlock accepts cancellation and has a 30-second safety deadline. Lock cancels
-  an unfinished unlock. Already-dirty operations are serialized, not terminated
-  mid-save or mid-edit. Worker termination is awaited before a successful lock.
-- Save refuses an externally modified/deleted source and retains dirty changes.
-  Save As currently accepts **new destinations only**, re-encrypts with fresh
-  randomness and switches the shared session to the new path.
-- Recovery snapshots are ordinary encrypted KDBX files with unique opaque IDs.
-  They never overwrite a previously returned snapshot, even after a password
-  change. Restore with a selected reference from `findRecovery()`; changed,
-  corrupt, deleted, unreadable or oversized sources cause a conflict and require
-  Save As. Source-access failures are exposed in `state.sourceIssue`, not hidden.
-- Save/discard removes only owned, revision-checked snapshots. Older snapshots
-  from another session/restart remain discoverable and need explicit
-  `discardRecovery()` after that session closes. Cleanup failures are reported
-  separately from a successful save; clean lock still releases the worker.
-- Recovery preserves database contents and KeePass entry history, **not an editor
-  undo/redo stack**. Undo/redo ends at lock/recovery, as agreed.
-
-Fingerprint checks cannot eliminate the cross-process check-to-replacement race.
-Do not edit the same file in multiple applications/windows concurrently. UNC
-paths are refused; network/mapped mounts are unsupported. Directory flush is
-performed on POSIX; Windows flushes the file and verifies replacement but has no
-portable Node directory-flush equivalent. Persistence uncertainty is an explicit
-error requiring reconciliation or Save As, not a success result. A crash or
-cleanup failure can leave encrypted staging/recovery files; changing a password
-cannot revoke those older copies.
-
-Local Windows validation for this increment: **249 tests pass**, with one
-POSIX-only permission test skipped; type/lint/format checks, all 12 compatibility
-cases and the production dependency audit pass. The final VSIX passes on
-VS Code **1.101.0 and 1.143.1**, in both trusted and genuinely Restricted Mode
-windows, including the packaged persistent-worker round trip. Linux/macOS
-validation of the new persistence paths still requires CI.
-
-## Remaining product gates
-
-The interactive workflow milestone is implemented, not a release approval.
-Next are hands-on installed-editor acceptance (especially real native Save As,
-hot exit and dialog/cancellation flows), Linux/macOS CI for the new workflows,
-accessibility and independent security review, broader real-world compatibility
-and performance testing, and Marketplace preparation. Unit/provider tests and
-browser smoke do not substitute for installed interactive acceptance. Phase 1
-approval does not approve these later functional or release gates.
-
-## Privacy and safety
-
-Runtime probes use only generated synthetic data, stay in memory, make no
-network requests and do not write databases or plaintext snapshots to disk.
-`pnpm test`, `pnpm interop` and `pnpm calibrate` are the exceptions: they write synthetic
-databases to a temporary directory and delete them afterwards. `pnpm smoke`
-downloads VS Code into `packages/extension/.vscode-test/` and uses temporary
-synthetic fixtures and isolated profiles for its editor tests, and verifies the
-installed persistent worker can edit, change a password, encrypt and reopen.
-The core session API writes only encrypted KDBX data and non-secret recovery
-identifiers/fingerprints, never passwords or plaintext snapshots. Old copies
-and snapshots can still be unlocked with their original passwords; a password
-change does not revoke them.
-Package installation and dependency auditing do use the package registry.
-Worker cancellation waits for termination. Node's worker heap limits **do not**
-bound WASM or ArrayBuffer memory, and exceeding one can abort the whole process
-rather than only the worker, so decoded data is bounded by explicit admission
-ceilings measured to stay well below the heap limit.
-Header inspection verifies only a public checksum, not authenticity or the
-encrypted payload. A passing probe is not a security review or release approval.
-
-The extension cannot protect against malicious extensions, a
-compromised host, process inspection, keyloggers or clipboard history.
+Report vulnerabilities privately through
+[GitHub private vulnerability reporting](https://github.com/erlihs/vscode-kdbx/security/advisories/new).
+Do not open public issues containing vulnerability details or credentials.
+See [SECURITY.md](SECURITY.md) for reporting guidance.
 
 ## License
 
-[MIT](LICENSE). Candidate dependency versions and license considerations are
-documented in [the compatibility assessment](docs/compatibility.md).
+[MIT](LICENSE). Bundled dependencies retain their accompanying legal notices.

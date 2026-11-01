@@ -6,4 +6,9 @@ coverage/
 .DS_Store
 .vscode-test/
 
-test.kdbx
+*.kdbx 
+
+packages/extension/LICENSE
+packages/extension/README.md
+packages/extension/SECURITY.md
+packages/extension/docs/images/

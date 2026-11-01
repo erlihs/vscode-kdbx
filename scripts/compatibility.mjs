@@ -32,11 +32,11 @@ for (const cipher of ["aes256", "chacha20"]) {
 }
 console.table(rows);
 // Interoperability, calibration and VS Code packaging evidence come from
-// `pnpm interop`, `pnpm calibrate` and `pnpm smoke`; see docs/compatibility.md.
+// `pnpm interop`, `pnpm calibrate` and `pnpm smoke`; see docs/technical.md.
 console.log(
   failed
-    ? `GATE NOT PASSED: ${failed} synthetic probe cases failed. See docs/compatibility.md.`
-    : "GATE PASSED: all synthetic probe cases succeeded. See docs/compatibility.md for the " +
+    ? `GATE NOT PASSED: ${failed} synthetic probe cases failed. See docs/technical.md.`
+    : "GATE PASSED: all synthetic probe cases succeeded. See docs/technical.md for the " +
         "interoperability, calibration and VS Code packaging evidence.",
 );
 if (failed) process.exitCode = 1;

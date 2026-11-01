@@ -1,12 +1,23 @@
 {
-  "name": "kdbx",
-  "displayName": "KeePass Database Manager (preview)",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Local KeePass 4.1 database editor preview with encrypted recovery and compatibility diagnostics.",
+  "name": "vscode-kdbx",
+  "displayName": "KDBX for VS Code",
+  "version": "0.1.0",
+  "description": "Browse and manage KeePass-compatible KDBX databases directly in VS Code.",
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "kdbx",
+    "keepass",
+    "keepassxc",
+    "password",
+    "password manager",
+    "secrets"
+  ],
+  "homepage": "https://github.com/erlihs/vscode-kdbx#readme",
+  "bugs": {
+    "url": "https://github.com/erlihs/vscode-kdbx/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -16,7 +27,7 @@
   "main": "./dist/extension.js",
   "scripts": {
     "bundle": "node build.mjs",
-    "package": "node build.mjs && vsce package --no-dependencies --skip-license --out dist/kdbx.vsix",
+    "package": "node build.mjs && vsce package --no-dependencies --out dist/kdbx.vsix",
     "smoke": "node test/run-smoke.mjs"
   },
   "devDependencies": {
@@ -30,7 +41,7 @@
     "customEditors": [
       {
         "viewType": "kdbx.database",
-        "displayName": "KeePass Database",
+        "displayName": "KDBX Database",
         "selector": [
           {
             "filenamePattern": "*.kdbx"
@@ -42,23 +53,23 @@
     "commands": [
       {
         "command": "kdbx.createDatabase",
-        "title": "KeePass: Create Database"
+        "title": "KDBX: Create Database"
       },
       {
         "command": "kdbx.lockDatabase",
-        "title": "KeePass: Lock Database"
+        "title": "KDBX: Lock Database"
       },
       {
         "command": "kdbx.lockAllDatabases",
-        "title": "KeePass: Lock All Databases"
+        "title": "KDBX: Lock All Databases"
       },
       {
         "command": "kdbx.compatibilitySelfTest",
-        "title": "KeePass: Run Compatibility Self-Test (synthetic data)"
+        "title": "KDBX: Run Compatibility Self-Test (synthetic data)"
       }
     ],
     "configuration": {
-      "title": "KeePass",
+      "title": "KDBX",
       "properties": {
         "kdbx.idleLockMinutes": {
           "type": "number",
@@ -74,6 +85,7 @@
   "extensionKind": [
     "ui"
   ],
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.101.0"
   },
